@@ -1,0 +1,10 @@
+/* 
+  Localizable.strings
+  VirtualSound
+
+  Created by Daniel Vollmer on 13/12/2015.
+
+*/
+
+DeviceName = "Loopback Audio Device";
+ManufacturerName = "[maven] heavy industries";

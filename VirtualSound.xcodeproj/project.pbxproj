@@ -6,20 +6,87 @@
 	objectVersion = 46;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		8A7C0D161C1DD24A006EC2C6 /* LoopbackAudio.c in Sources */ = {isa = PBXBuildFile; fileRef = 8A7C0D151C1DD24A006EC2C6 /* LoopbackAudio.c */; };
+		8A7C0D181C1DD691006EC2C6 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 8A7C0D171C1DD691006EC2C6 /* Localizable.strings */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		8A7C0D0E1C1DCDCF006EC2C6 /* LoopbackAudio.driver */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LoopbackAudio.driver; sourceTree = BUILT_PRODUCTS_DIR; };
+		8A7C0D111C1DCDCF006EC2C6 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		8A7C0D151C1DD24A006EC2C6 /* LoopbackAudio.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = LoopbackAudio.c; sourceTree = "<group>"; tabWidth = 4; };
+		8A7C0D171C1DD691006EC2C6 /* Localizable.strings */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; path = Localizable.strings; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		8A7C0D0B1C1DCDCF006EC2C6 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
 /* Begin PBXGroup section */
 		8A7C0D031C1DB801006EC2C6 = {
 			isa = PBXGroup;
 			children = (
+				8A7C0D101C1DCDCF006EC2C6 /* LoopbackAudio */,
+				8A7C0D0F1C1DCDCF006EC2C6 /* Products */,
 			);
 			sourceTree = "<group>";
 		};
+		8A7C0D0F1C1DCDCF006EC2C6 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				8A7C0D0E1C1DCDCF006EC2C6 /* LoopbackAudio.driver */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		8A7C0D101C1DCDCF006EC2C6 /* LoopbackAudio */ = {
+			isa = PBXGroup;
+			children = (
+				8A7C0D151C1DD24A006EC2C6 /* LoopbackAudio.c */,
+				8A7C0D111C1DCDCF006EC2C6 /* Info.plist */,
+				8A7C0D171C1DD691006EC2C6 /* Localizable.strings */,
+			);
+			path = LoopbackAudio;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		8A7C0D0D1C1DCDCF006EC2C6 /* LoopbackAudio */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 8A7C0D121C1DCDCF006EC2C6 /* Build configuration list for PBXNativeTarget "LoopbackAudio" */;
+			buildPhases = (
+				8A7C0D0A1C1DCDCF006EC2C6 /* Sources */,
+				8A7C0D0B1C1DCDCF006EC2C6 /* Frameworks */,
+				8A7C0D0C1C1DCDCF006EC2C6 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = LoopbackAudio;
+			productName = LoopbackAudio;
+			productReference = 8A7C0D0E1C1DCDCF006EC2C6 /* LoopbackAudio.driver */;
+			productType = "com.apple.product-type.bundle";
+		};
+/* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
 		8A7C0D041C1DB801006EC2C6 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
 				LastUpgradeCheck = 0720;
+				TargetAttributes = {
+					8A7C0D0D1C1DCDCF006EC2C6 = {
+						CreatedOnToolsVersion = 7.2;
+					};
+				};
 			};
 			buildConfigurationList = 8A7C0D071C1DB801006EC2C6 /* Build configuration list for PBXProject "VirtualSound" */;
 			compatibilityVersion = "Xcode 3.2";
@@ -29,12 +96,36 @@
 				en,
 			);
 			mainGroup = 8A7C0D031C1DB801006EC2C6;
+			productRefGroup = 8A7C0D0F1C1DCDCF006EC2C6 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
+				8A7C0D0D1C1DCDCF006EC2C6 /* LoopbackAudio */,
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		8A7C0D0C1C1DCDCF006EC2C6 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8A7C0D181C1DD691006EC2C6 /* Localizable.strings in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		8A7C0D0A1C1DCDCF006EC2C6 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8A7C0D161C1DD24A006EC2C6 /* LoopbackAudio.c in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
 		8A7C0D081C1DB801006EC2C6 /* Debug */ = {
@@ -49,6 +140,99 @@
 			};
 			name = Release;
 		};
+		8A7C0D131C1DCDCF006EC2C6 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++0x";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_IDENTITY = "-";
+				COMBINE_HIDPI_IMAGES = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu99;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				INFOPLIST_FILE = LoopbackAudio/Info.plist;
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Audio/Plug-Ins/HAL";
+				MACOSX_DEPLOYMENT_TARGET = 10.11;
+				MTL_ENABLE_DEBUG_INFO = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = de.maven.LoopbackAudio;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				WRAPPER_EXTENSION = driver;
+			};
+			name = Debug;
+		};
+		8A7C0D141C1DCDCF006EC2C6 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++0x";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_IDENTITY = "-";
+				COMBINE_HIDPI_IMAGES = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu99;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				INFOPLIST_FILE = LoopbackAudio/Info.plist;
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Audio/Plug-Ins/HAL";
+				MACOSX_DEPLOYMENT_TARGET = 10.11;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				PRODUCT_BUNDLE_IDENTIFIER = de.maven.LoopbackAudio;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				WRAPPER_EXTENSION = driver;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -60,6 +244,14 @@
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
+		};
+		8A7C0D121C1DCDCF006EC2C6 /* Build configuration list for PBXNativeTarget "LoopbackAudio" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8A7C0D131C1DCDCF006EC2C6 /* Debug */,
+				8A7C0D141C1DCDCF006EC2C6 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
 		};
 /* End XCConfigurationList section */
 	};
