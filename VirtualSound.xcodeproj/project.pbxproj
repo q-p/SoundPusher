@@ -9,13 +9,16 @@
 /* Begin PBXBuildFile section */
 		8A7C0D161C1DD24A006EC2C6 /* LoopbackAudio.c in Sources */ = {isa = PBXBuildFile; fileRef = 8A7C0D151C1DD24A006EC2C6 /* LoopbackAudio.c */; };
 		8A7C0D181C1DD691006EC2C6 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 8A7C0D171C1DD691006EC2C6 /* Localizable.strings */; };
+		8A8D38EE1C1DE3A500B9A127 /* TPCircularBuffer.c in Sources */ = {isa = PBXBuildFile; fileRef = 8A8D38EC1C1DE3A500B9A127 /* TPCircularBuffer.c */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		8A7C0D0E1C1DCDCF006EC2C6 /* LoopbackAudio.driver */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LoopbackAudio.driver; sourceTree = BUILT_PRODUCTS_DIR; };
 		8A7C0D111C1DCDCF006EC2C6 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		8A7C0D151C1DD24A006EC2C6 /* LoopbackAudio.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = LoopbackAudio.c; sourceTree = "<group>"; tabWidth = 4; };
+		8A7C0D151C1DD24A006EC2C6 /* LoopbackAudio.c */ = {isa = PBXFileReference; fileEncoding = 4; indentWidth = 4; lastKnownFileType = sourcecode.c.c; path = LoopbackAudio.c; sourceTree = "<group>"; tabWidth = 4; usesTabs = 1; };
 		8A7C0D171C1DD691006EC2C6 /* Localizable.strings */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; path = Localizable.strings; sourceTree = "<group>"; };
+		8A8D38EC1C1DE3A500B9A127 /* TPCircularBuffer.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = TPCircularBuffer.c; path = thirdparty/TPCircularBuffer/TPCircularBuffer.c; sourceTree = "<group>"; };
+		8A8D38ED1C1DE3A500B9A127 /* TPCircularBuffer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = TPCircularBuffer.h; path = thirdparty/TPCircularBuffer/TPCircularBuffer.h; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -33,6 +36,7 @@
 			isa = PBXGroup;
 			children = (
 				8A7C0D101C1DCDCF006EC2C6 /* LoopbackAudio */,
+				8A8D38EF1C1DE3B100B9A127 /* thirdparty */,
 				8A7C0D0F1C1DCDCF006EC2C6 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -53,6 +57,23 @@
 				8A7C0D171C1DD691006EC2C6 /* Localizable.strings */,
 			);
 			path = LoopbackAudio;
+			sourceTree = "<group>";
+		};
+		8A8D38EF1C1DE3B100B9A127 /* thirdparty */ = {
+			isa = PBXGroup;
+			children = (
+				8A8D38F01C1DE3BB00B9A127 /* TPCircularBuffer */,
+			);
+			name = thirdparty;
+			sourceTree = "<group>";
+		};
+		8A8D38F01C1DE3BB00B9A127 /* TPCircularBuffer */ = {
+			isa = PBXGroup;
+			children = (
+				8A8D38EC1C1DE3A500B9A127 /* TPCircularBuffer.c */,
+				8A8D38ED1C1DE3A500B9A127 /* TPCircularBuffer.h */,
+			);
+			name = TPCircularBuffer;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -121,6 +142,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				8A8D38EE1C1DE3A500B9A127 /* TPCircularBuffer.c in Sources */,
 				8A7C0D161C1DD24A006EC2C6 /* LoopbackAudio.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

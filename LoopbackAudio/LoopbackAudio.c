@@ -22,10 +22,25 @@
 #include <stdint.h>
 #include <sys/syslog.h>
 
+#include "TPCircularBuffer.h"
+
 //==================================================================================================
 #pragma mark -
 #pragma mark Macros
 //==================================================================================================
+
+void DebugPrint(const char *fmt, ...)
+{
+	va_list args;
+	va_start(args, fmt);
+#if DEBUG
+//	vprintf(fmt, args);
+#endif
+#if TARGET_API_MAC_OSX
+	vsyslog(LOG_ERR, fmt, args);
+#endif
+	va_end(args);
+}
 
 #if TARGET_RT_BIG_ENDIAN
 	#define	FourCCToCString(the4CC)	{ ((char*)&the4CC)[0], ((char*)&the4CC)[1], ((char*)&the4CC)[2], ((char*)&the4CC)[3], 0 }
@@ -76,29 +91,6 @@
 #pragma mark LoopbackAudio State
 //==================================================================================================
 
-//	The purpose of the LoopbackAudio is to provide the barest of bare bones implementations to
-//	illustrate the minimal set of things a driver has to do. As such, the driver has the following
-//	qualities:
-//	- a box
-//	- a device
-//		- supports 44100 and 48000 sample rates
-//		- provides a rate scalar of 1.0 via hard coding
-//	- a single input stream
-//		- supports 2 channels of 32 bit float LPCM samples
-//		- always produces zeros 
-//	- a single output stream
-//		- supports 2 channels of 32 bit float LPCM samples
-//		- data written to it is ignored
-//	- controls
-//		- master input volume
-//		- master output volume
-//		- master input mute
-//		- master output mute
-//		- master input data source
-//		- master output data source
-//		- all are for illustration purposes only and do not actually manipulate data
-
-
 //	Declare the internal object ID numbers for all the objects this driver implements. Note that
 //	because the driver has fixed set of objects that never grows or shrinks. If this were not the
 //	case, the driver would need to have a means to dynamically allocate these IDs. It is important
@@ -108,17 +100,28 @@
 enum
 {
 	kObjectID_PlugIn					= kAudioObjectPlugInObject,
-	kObjectID_Box						= 2,
-	kObjectID_Device					= 3,
-	kObjectID_Stream_Input				= 4,
-	kObjectID_Volume_Input_Master		= 5,
-	kObjectID_Mute_Input_Master			= 6,
-	kObjectID_DataSource_Input_Master	= 7,
-	kObjectID_Stream_Output				= 8,
-	kObjectID_Volume_Output_Master		= 9,
-	kObjectID_Mute_Output_Master		= 10,
-	kObjectID_DataSource_Output_Master	= 11
+	kObjectID_Device					= 2,
+	kObjectID_Stream_Input				= 3,
+	kObjectID_Stream_Output				= 4,
+	kObjectID_Mute_Output_Master		= 5
 };
+
+enum
+{
+	kChangeRequest_StreamFormat			= 1,
+//	kChangeRequest_ChannelLayout		= 2,
+};
+
+enum
+{
+	kMaxSupportedChannels		= 6,
+	kNumSupportedSampleRates	= 3,
+	kDevice_NumWarmupCycles		= 2,
+	kDevice_RingBuffSize		= 4096 * sizeof(float) * kMaxSupportedChannels, // space for 170 frames of 6 channels * float
+	kDevice_DesiredNumFrames	= 2048, // CoreAudio tries at least 300 microseconds worth of frames or 3/8th of the buffer, which for us is 48 frames
+};
+
+static const Float64 kSupportedSampleRates[kNumSupportedSampleRates] = {32000.0, 44100.0, 48000.0};
 
 //	Declare the stuff that tracks the state of the plug-in, the device and its sub-objects.
 //	Note that we use global variables here because this driver only ever has a single device. If
@@ -130,36 +133,59 @@ static pthread_mutex_t			gPlugIn_StateMutex				= PTHREAD_MUTEX_INITIALIZER;
 static UInt32					gPlugIn_RefCount				= 0;
 static AudioServerPlugInHostRef	gPlugIn_Host					= NULL;
 
-#define							kBox_UID						"LoopbackAudioBox_UID"
-static CFStringRef				gBox_Name						= NULL;
-static Boolean					gBox_Acquired					= true;
-
 #define							kDevice_UID						"LoopbackAudioDevice_UID"
 #define							kDevice_ModelUID				"LoopbackAudioDevice_ModelUID"
 static pthread_mutex_t			gDevice_IOMutex					= PTHREAD_MUTEX_INITIALIZER;
-static Float64					gDevice_SampleRate				= 44100.0;
-static UInt64					gDevice_IOIsRunning				= 0;
-static const UInt32				kDevice_RingBufferSize			= 16384;
+
+static AudioStreamBasicDescription gDevice_CurrentFormat = {
+	48000.0, // SampleRate
+	kAudioFormatLinearPCM, // FormatID
+	kAudioFormatFlagsNativeFloatPacked, // FormatFlags
+	sizeof(float) * 2 /*kMaxSupportedChannels*/, // BytesPerPacket
+	1, // FramesPerPacket
+	sizeof(float) * 2 /*kMaxSupportedChannels*/, // BytesPerFrame
+	2 /*6*/, // ChannelsPerFrame
+	sizeof(float) * 8, // BitsPerChannel
+	0, // Reserved
+};
+static AudioChannelLayout		gDevice_CurrentChannelLayout = {
+	kAudioChannelLayoutTag_MPEG_5_1_C, // ChannelLayoutTag
+	0, // ChannelBitmap
+	0, // NumberChannelDescriptions
+};
+
+static UInt32					gDevice_IOIsRunning				= 0;
+static TPCircularBuffer			gDevice_RingBuffer;
+static UInt32					gDevice_TotalFrames				= 0;
+static UInt32					gDevice_NumWarmupCycles			= 0;
+static UInt64					gDevice_LastWrapTimeStamp		= 0;
 static Float64					gDevice_HostTicksPerFrame		= 0.0;
-static UInt64					gDevice_NumberTimeStamps		= 0;
-static Float64					gDevice_AnchorSampleTime		= 0.0;
-static UInt64					gDevice_AnchorHostTime			= 0;
 
 static bool						gStream_Input_IsActive			= true;
 static bool						gStream_Output_IsActive			= true;
 
-static const Float32			kVolume_MinDB					= -96.0;
-static const Float32			kVolume_MaxDB					= 6.0;
-static Float32					gVolume_Input_Master_Value		= 0.0;
-static Float32					gVolume_Output_Master_Value		= 0.0;
-
-static bool						gMute_Input_Master_Value		= false;
 static bool						gMute_Output_Master_Value		= false;
 
-static const UInt32				kDataSource_NumberItems			= 4;
-#define							kDataSource_ItemNamePattern		"Data Source Item %d"
-static UInt32					gDataSource_Input_Master_Value	= 0;
-static UInt32					gDataSource_Output_Master_Value	= 0;
+
+static AudioChannelLayoutTag GetDefaultChannelLayout(UInt32 numChannels)
+{
+	switch (numChannels)
+	{
+		case 1:
+			return kAudioChannelLayoutTag_Mono;
+		case 2:
+			return kAudioChannelLayoutTag_Stereo;
+		case 3:
+			return kAudioChannelLayoutTag_ITU_2_1;
+		case 4:
+			return kAudioChannelLayoutTag_ITU_2_2;
+		case 5:
+			return kAudioChannelLayoutTag_ITU_3_2;
+		case 6:
+			return kAudioChannelLayoutTag_MPEG_5_1_C;
+	}
+	return kAudioChannelLayoutTag_Unknown;
+}
 
 //==================================================================================================
 #pragma mark -
@@ -199,12 +225,6 @@ static OSStatus		LoopbackAudio_IsPlugInPropertySettable(AudioServerPlugInDriverR
 static OSStatus		LoopbackAudio_GetPlugInPropertyDataSize(AudioServerPlugInDriverRef inDriver, AudioObjectID inObjectID, pid_t inClientProcessID, const AudioObjectPropertyAddress* inAddress, UInt32 inQualifierDataSize, const void* inQualifierData, UInt32* outDataSize);
 static OSStatus		LoopbackAudio_GetPlugInPropertyData(AudioServerPlugInDriverRef inDriver, AudioObjectID inObjectID, pid_t inClientProcessID, const AudioObjectPropertyAddress* inAddress, UInt32 inQualifierDataSize, const void* inQualifierData, UInt32 inDataSize, UInt32* outDataSize, void* outData);
 static OSStatus		LoopbackAudio_SetPlugInPropertyData(AudioServerPlugInDriverRef inDriver, AudioObjectID inObjectID, pid_t inClientProcessID, const AudioObjectPropertyAddress* inAddress, UInt32 inQualifierDataSize, const void* inQualifierData, UInt32 inDataSize, const void* inData, UInt32* outNumberPropertiesChanged, AudioObjectPropertyAddress outChangedAddresses[2]);
-
-static Boolean		LoopbackAudio_HasBoxProperty(AudioServerPlugInDriverRef inDriver, AudioObjectID inObjectID, pid_t inClientProcessID, const AudioObjectPropertyAddress* inAddress);
-static OSStatus		LoopbackAudio_IsBoxPropertySettable(AudioServerPlugInDriverRef inDriver, AudioObjectID inObjectID, pid_t inClientProcessID, const AudioObjectPropertyAddress* inAddress, Boolean* outIsSettable);
-static OSStatus		LoopbackAudio_GetBoxPropertyDataSize(AudioServerPlugInDriverRef inDriver, AudioObjectID inObjectID, pid_t inClientProcessID, const AudioObjectPropertyAddress* inAddress, UInt32 inQualifierDataSize, const void* inQualifierData, UInt32* outDataSize);
-static OSStatus		LoopbackAudio_GetBoxPropertyData(AudioServerPlugInDriverRef inDriver, AudioObjectID inObjectID, pid_t inClientProcessID, const AudioObjectPropertyAddress* inAddress, UInt32 inQualifierDataSize, const void* inQualifierData, UInt32 inDataSize, UInt32* outDataSize, void* outData);
-static OSStatus		LoopbackAudio_SetBoxPropertyData(AudioServerPlugInDriverRef inDriver, AudioObjectID inObjectID, pid_t inClientProcessID, const AudioObjectPropertyAddress* inAddress, UInt32 inQualifierDataSize, const void* inQualifierData, UInt32 inDataSize, const void* inData, UInt32* outNumberPropertiesChanged, AudioObjectPropertyAddress outChangedAddresses[2]);
 
 static Boolean		LoopbackAudio_HasDeviceProperty(AudioServerPlugInDriverRef inDriver, AudioObjectID inObjectID, pid_t inClientProcessID, const AudioObjectPropertyAddress* inAddress);
 static OSStatus		LoopbackAudio_IsDevicePropertySettable(AudioServerPlugInDriverRef inDriver, AudioObjectID inObjectID, pid_t inClientProcessID, const AudioObjectPropertyAddress* inAddress, Boolean* outIsSettable);
@@ -277,7 +297,7 @@ void*	LoopbackAudio_Create(CFAllocatorRef inAllocator, CFUUIDRef inRequestedType
     return theAnswer;
 }
 
-#pragma mark Inheritence
+#pragma mark Inheritance
 
 static HRESULT	LoopbackAudio_QueryInterface(void* inDriver, REFIID inUUID, LPVOID* outInterface)
 {
@@ -390,48 +410,12 @@ static OSStatus	LoopbackAudio_Initialize(AudioServerPlugInDriverRef inDriver, Au
 	//	store the AudioServerPlugInHostRef
 	gPlugIn_Host = inHost;
 	
-	//	initialize the box acquired property from the settings
-	CFPropertyListRef theSettingsData = NULL;
-	gPlugIn_Host->CopyFromStorage(gPlugIn_Host, CFSTR("box acquired"), &theSettingsData);
-	if(theSettingsData != NULL)
-	{
-		if(CFGetTypeID(theSettingsData) == CFBooleanGetTypeID())
-		{
-			gBox_Acquired = CFBooleanGetValue((CFBooleanRef)theSettingsData);
-		}
-		else if(CFGetTypeID(theSettingsData) == CFNumberGetTypeID())
-		{
-			SInt32 theValue = 0;
-			CFNumberGetValue((CFNumberRef)theSettingsData, kCFNumberSInt32Type, &theValue);
-			gBox_Acquired = theValue ? 1 : 0;
-		}
-		CFRelease(theSettingsData);
-	}
-	
-	//	initialize the box name from the settings
-	gPlugIn_Host->CopyFromStorage(gPlugIn_Host, CFSTR("box acquired"), &theSettingsData);
-	if(theSettingsData != NULL)
-	{
-		if(CFGetTypeID(theSettingsData) == CFStringGetTypeID())
-		{
-			gBox_Name = (CFStringRef)theSettingsData;
-			CFRetain(gBox_Name);
-		}
-		CFRelease(theSettingsData);
-	}
-	
-	//	set the box name directly as a last resort
-	if(gBox_Name == NULL)
-	{
-		gBox_Name = CFSTR("Null Box");
-	}
-	
 	//	calculate the host ticks per frame
 	struct mach_timebase_info theTimeBaseInfo;
 	mach_timebase_info(&theTimeBaseInfo);
 	Float64 theHostClockFrequency = theTimeBaseInfo.denom / theTimeBaseInfo.numer;
 	theHostClockFrequency *= 1000000000.0;
-	gDevice_HostTicksPerFrame = theHostClockFrequency / gDevice_SampleRate;
+	gDevice_HostTicksPerFrame = theHostClockFrequency / gDevice_CurrentFormat.mSampleRate;
 	
 Done:
 	return theAnswer;
@@ -537,20 +521,36 @@ static OSStatus	LoopbackAudio_PerformDeviceConfigurationChange(AudioServerPlugIn
 	//	check the arguments
 	FailWithAction(inDriver != gAudioServerPlugInDriverRef, theAnswer = kAudioHardwareBadObjectError, Done, "LoopbackAudio_PerformDeviceConfigurationChange: bad driver reference");
 	FailWithAction(inDeviceObjectID != kObjectID_Device, theAnswer = kAudioHardwareBadObjectError, Done, "LoopbackAudio_PerformDeviceConfigurationChange: bad device ID");
-	FailWithAction((inChangeAction != 44100) && (inChangeAction != 48000), theAnswer = kAudioHardwareBadObjectError, Done, "LoopbackAudio_PerformDeviceConfigurationChange: bad sample rate");
-	
+
+	FailWithAction((inChangeAction != kChangeRequest_StreamFormat), theAnswer = kAudioHardwareBadObjectError, Done, "Loopback_PerformDeviceConfigurationChange: bad change request");
+
 	//	lock the state mutex
 	pthread_mutex_lock(&gPlugIn_StateMutex);
 	
-	//	change the sample rate
-	gDevice_SampleRate = inChangeAction;
-	
-	//	recalculate the state that depends on the sample rate
-	struct mach_timebase_info theTimeBaseInfo;
-	mach_timebase_info(&theTimeBaseInfo);
-	Float64 theHostClockFrequency = theTimeBaseInfo.denom / theTimeBaseInfo.numer;
-	theHostClockFrequency *= 1000000000.0;
-	gDevice_HostTicksPerFrame = theHostClockFrequency / gDevice_SampleRate;
+	switch (inChangeAction)
+	{
+		case kChangeRequest_StreamFormat:
+		{
+			AudioStreamBasicDescription *newFormat = (AudioStreamBasicDescription *)inChangeInfo;
+			
+			gDevice_CurrentFormat = *newFormat;
+			
+			// recalculate the state that depends on the sample rate
+			struct mach_timebase_info theTimeBaseInfo;
+			mach_timebase_info(&theTimeBaseInfo);
+			Float64 theHostClockFrequency = theTimeBaseInfo.denom / theTimeBaseInfo.numer;
+			theHostClockFrequency *= 1000000000.0;
+			gDevice_HostTicksPerFrame = theHostClockFrequency / gDevice_CurrentFormat.mSampleRate;
+			
+			gDevice_CurrentChannelLayout.mChannelLayoutTag = GetDefaultChannelLayout(gDevice_CurrentFormat.mChannelsPerFrame);
+			
+			free(newFormat);
+			break;
+		}
+		default:
+			theAnswer = kAudioHardwareBadObjectError;
+			break;
+	}
 
 	//	unlock the state mutex
 	pthread_mutex_unlock(&gPlugIn_StateMutex);
@@ -601,10 +601,6 @@ static Boolean	LoopbackAudio_HasProperty(AudioServerPlugInDriverRef inDriver, Au
 			theAnswer = LoopbackAudio_HasPlugInProperty(inDriver, inObjectID, inClientProcessID, inAddress);
 			break;
 		
-		case kObjectID_Box:
-			theAnswer = LoopbackAudio_HasBoxProperty(inDriver, inObjectID, inClientProcessID, inAddress);
-			break;
-		
 		case kObjectID_Device:
 			theAnswer = LoopbackAudio_HasDeviceProperty(inDriver, inObjectID, inClientProcessID, inAddress);
 			break;
@@ -614,12 +610,7 @@ static Boolean	LoopbackAudio_HasProperty(AudioServerPlugInDriverRef inDriver, Au
 			theAnswer = LoopbackAudio_HasStreamProperty(inDriver, inObjectID, inClientProcessID, inAddress);
 			break;
 		
-		case kObjectID_Volume_Input_Master:
-		case kObjectID_Volume_Output_Master:
-		case kObjectID_Mute_Input_Master:
 		case kObjectID_Mute_Output_Master:
-		case kObjectID_DataSource_Input_Master:
-		case kObjectID_DataSource_Output_Master:
 			theAnswer = LoopbackAudio_HasControlProperty(inDriver, inObjectID, inClientProcessID, inAddress);
 			break;
 	};
@@ -650,10 +641,6 @@ static OSStatus	LoopbackAudio_IsPropertySettable(AudioServerPlugInDriverRef inDr
 			theAnswer = LoopbackAudio_IsPlugInPropertySettable(inDriver, inObjectID, inClientProcessID, inAddress, outIsSettable);
 			break;
 		
-		case kObjectID_Box:
-			theAnswer = LoopbackAudio_IsBoxPropertySettable(inDriver, inObjectID, inClientProcessID, inAddress, outIsSettable);
-			break;
-		
 		case kObjectID_Device:
 			theAnswer = LoopbackAudio_IsDevicePropertySettable(inDriver, inObjectID, inClientProcessID, inAddress, outIsSettable);
 			break;
@@ -663,12 +650,7 @@ static OSStatus	LoopbackAudio_IsPropertySettable(AudioServerPlugInDriverRef inDr
 			theAnswer = LoopbackAudio_IsStreamPropertySettable(inDriver, inObjectID, inClientProcessID, inAddress, outIsSettable);
 			break;
 		
-		case kObjectID_Volume_Input_Master:
-		case kObjectID_Volume_Output_Master:
-		case kObjectID_Mute_Input_Master:
 		case kObjectID_Mute_Output_Master:
-		case kObjectID_DataSource_Input_Master:
-		case kObjectID_DataSource_Output_Master:
 			theAnswer = LoopbackAudio_IsControlPropertySettable(inDriver, inObjectID, inClientProcessID, inAddress, outIsSettable);
 			break;
 				
@@ -702,10 +684,6 @@ static OSStatus	LoopbackAudio_GetPropertyDataSize(AudioServerPlugInDriverRef inD
 			theAnswer = LoopbackAudio_GetPlugInPropertyDataSize(inDriver, inObjectID, inClientProcessID, inAddress, inQualifierDataSize, inQualifierData, outDataSize);
 			break;
 		
-		case kObjectID_Box:
-			theAnswer = LoopbackAudio_GetBoxPropertyDataSize(inDriver, inObjectID, inClientProcessID, inAddress, inQualifierDataSize, inQualifierData, outDataSize);
-			break;
-		
 		case kObjectID_Device:
 			theAnswer = LoopbackAudio_GetDevicePropertyDataSize(inDriver, inObjectID, inClientProcessID, inAddress, inQualifierDataSize, inQualifierData, outDataSize);
 			break;
@@ -715,12 +693,7 @@ static OSStatus	LoopbackAudio_GetPropertyDataSize(AudioServerPlugInDriverRef inD
 			theAnswer = LoopbackAudio_GetStreamPropertyDataSize(inDriver, inObjectID, inClientProcessID, inAddress, inQualifierDataSize, inQualifierData, outDataSize);
 			break;
 		
-		case kObjectID_Volume_Input_Master:
-		case kObjectID_Volume_Output_Master:
-		case kObjectID_Mute_Input_Master:
 		case kObjectID_Mute_Output_Master:
-		case kObjectID_DataSource_Input_Master:
-		case kObjectID_DataSource_Output_Master:
 			theAnswer = LoopbackAudio_GetControlPropertyDataSize(inDriver, inObjectID, inClientProcessID, inAddress, inQualifierDataSize, inQualifierData, outDataSize);
 			break;
 				
@@ -755,10 +728,6 @@ static OSStatus	LoopbackAudio_GetPropertyData(AudioServerPlugInDriverRef inDrive
 			theAnswer = LoopbackAudio_GetPlugInPropertyData(inDriver, inObjectID, inClientProcessID, inAddress, inQualifierDataSize, inQualifierData, inDataSize, outDataSize, outData);
 			break;
 		
-		case kObjectID_Box:
-			theAnswer = LoopbackAudio_GetBoxPropertyData(inDriver, inObjectID, inClientProcessID, inAddress, inQualifierDataSize, inQualifierData, inDataSize, outDataSize, outData);
-			break;
-		
 		case kObjectID_Device:
 			theAnswer = LoopbackAudio_GetDevicePropertyData(inDriver, inObjectID, inClientProcessID, inAddress, inQualifierDataSize, inQualifierData, inDataSize, outDataSize, outData);
 			break;
@@ -768,12 +737,7 @@ static OSStatus	LoopbackAudio_GetPropertyData(AudioServerPlugInDriverRef inDrive
 			theAnswer = LoopbackAudio_GetStreamPropertyData(inDriver, inObjectID, inClientProcessID, inAddress, inQualifierDataSize, inQualifierData, inDataSize, outDataSize, outData);
 			break;
 		
-		case kObjectID_Volume_Input_Master:
-		case kObjectID_Volume_Output_Master:
-		case kObjectID_Mute_Input_Master:
 		case kObjectID_Mute_Output_Master:
-		case kObjectID_DataSource_Input_Master:
-		case kObjectID_DataSource_Output_Master:
 			theAnswer = LoopbackAudio_GetControlPropertyData(inDriver, inObjectID, inClientProcessID, inAddress, inQualifierDataSize, inQualifierData, inDataSize, outDataSize, outData);
 			break;
 				
@@ -806,10 +770,6 @@ static OSStatus	LoopbackAudio_SetPropertyData(AudioServerPlugInDriverRef inDrive
 			theAnswer = LoopbackAudio_SetPlugInPropertyData(inDriver, inObjectID, inClientProcessID, inAddress, inQualifierDataSize, inQualifierData, inDataSize, inData, &theNumberPropertiesChanged, theChangedAddresses);
 			break;
 		
-		case kObjectID_Box:
-			theAnswer = LoopbackAudio_SetBoxPropertyData(inDriver, inObjectID, inClientProcessID, inAddress, inQualifierDataSize, inQualifierData, inDataSize, inData, &theNumberPropertiesChanged, theChangedAddresses);
-			break;
-		
 		case kObjectID_Device:
 			theAnswer = LoopbackAudio_SetDevicePropertyData(inDriver, inObjectID, inClientProcessID, inAddress, inQualifierDataSize, inQualifierData, inDataSize, inData, &theNumberPropertiesChanged, theChangedAddresses);
 			break;
@@ -819,12 +779,7 @@ static OSStatus	LoopbackAudio_SetPropertyData(AudioServerPlugInDriverRef inDrive
 			theAnswer = LoopbackAudio_SetStreamPropertyData(inDriver, inObjectID, inClientProcessID, inAddress, inQualifierDataSize, inQualifierData, inDataSize, inData, &theNumberPropertiesChanged, theChangedAddresses);
 			break;
 		
-		case kObjectID_Volume_Input_Master:
-		case kObjectID_Volume_Output_Master:
-		case kObjectID_Mute_Input_Master:
 		case kObjectID_Mute_Output_Master:
-		case kObjectID_DataSource_Input_Master:
-		case kObjectID_DataSource_Output_Master:
 			theAnswer = LoopbackAudio_SetControlPropertyData(inDriver, inObjectID, inClientProcessID, inAddress, inQualifierDataSize, inQualifierData, inDataSize, inData, &theNumberPropertiesChanged, theChangedAddresses);
 			break;
 				
@@ -870,12 +825,10 @@ static Boolean	LoopbackAudio_HasPlugInProperty(AudioServerPlugInDriverRef inDriv
 		case kAudioObjectPropertyOwner:
 		case kAudioObjectPropertyManufacturer:
 		case kAudioObjectPropertyOwnedObjects:
-		case kAudioPlugInPropertyBoxList:
-		case kAudioPlugInPropertyTranslateUIDToBox:
 		case kAudioPlugInPropertyDeviceList:
 		case kAudioPlugInPropertyTranslateUIDToDevice:
 		case kAudioPlugInPropertyResourceBundle:
-			theAnswer = true;
+			theAnswer = (inAddress->mScope == kAudioObjectPropertyScopeGlobal) && (inAddress->mElement == kAudioObjectPropertyElementMaster);
 			break;
 	};
 
@@ -909,8 +862,6 @@ static OSStatus	LoopbackAudio_IsPlugInPropertySettable(AudioServerPlugInDriverRe
 		case kAudioObjectPropertyOwner:
 		case kAudioObjectPropertyManufacturer:
 		case kAudioObjectPropertyOwnedObjects:
-		case kAudioPlugInPropertyBoxList:
-		case kAudioPlugInPropertyTranslateUIDToBox:
 		case kAudioPlugInPropertyDeviceList:
 		case kAudioPlugInPropertyTranslateUIDToDevice:
 		case kAudioPlugInPropertyResourceBundle:
@@ -963,33 +914,8 @@ static OSStatus	LoopbackAudio_GetPlugInPropertyDataSize(AudioServerPlugInDriverR
 			break;
 			
 		case kAudioObjectPropertyOwnedObjects:
-			if(gBox_Acquired)
-			{
-				*outDataSize = 2 * sizeof(AudioClassID);
-			}
-			else
-			{
-				*outDataSize = sizeof(AudioClassID);
-			}
-			break;
-			
-		case kAudioPlugInPropertyBoxList:
-			*outDataSize = sizeof(AudioClassID);
-			break;
-			
-		case kAudioPlugInPropertyTranslateUIDToBox:
-			*outDataSize = sizeof(AudioObjectID);
-			break;
-			
 		case kAudioPlugInPropertyDeviceList:
-			if(gBox_Acquired)
-			{
-				*outDataSize = sizeof(AudioClassID);
-			}
-			else
-			{
-				*outDataSize = 0;
-			}
+			*outDataSize = sizeof(AudioClassID);
 			break;
 			
 		case kAudioPlugInPropertyTranslateUIDToDevice:
@@ -1055,44 +981,20 @@ static OSStatus	LoopbackAudio_GetPlugInPropertyData(AudioServerPlugInDriverRef i
 		case kAudioObjectPropertyManufacturer:
 			//	This is the human readable name of the maker of the plug-in.
 			FailWithAction(inDataSize < sizeof(CFStringRef), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetPlugInPropertyData: not enough space for the return value of kAudioObjectPropertyManufacturer for the plug-in");
-			*((CFStringRef*)outData) = CFSTR("Apple Inc.");
+			*((CFStringRef*)outData) = CFSTR("ManufacturerName");
 			*outDataSize = sizeof(CFStringRef);
 			break;
 			
 		case kAudioObjectPropertyOwnedObjects:
+			//	This returns the objects directly owned by the object. In the case of the
+			//	plug-in object it is the same as the device list.
+		case kAudioPlugInPropertyDeviceList:
 			//	Calculate the number of items that have been requested. Note that this
 			//	number is allowed to be smaller than the actual size of the list. In such
 			//	case, only that number of items will be returned
 			theNumberItemsToFetch = inDataSize / sizeof(AudioObjectID);
 			
-			//	Clamp that to the number of boxes this driver implements (which is just 1)
-			if(theNumberItemsToFetch > (gBox_Acquired ? 2 : 1))
-			{
-				theNumberItemsToFetch = (gBox_Acquired ? 2 : 1);
-			}
-			
-			//	Write the devices' object IDs into the return value
-			if(theNumberItemsToFetch > 1)
-			{
-				((AudioObjectID*)outData)[0] = kObjectID_Box;
-				((AudioObjectID*)outData)[0] = kObjectID_Device;
-			}
-			else if(theNumberItemsToFetch > 0)
-			{
-				((AudioObjectID*)outData)[0] = kObjectID_Box;
-			}
-			
-			//	Return how many bytes we wrote to
-			*outDataSize = theNumberItemsToFetch * sizeof(AudioClassID);
-			break;
-			
-		case kAudioPlugInPropertyBoxList:
-			//	Calculate the number of items that have been requested. Note that this
-			//	number is allowed to be smaller than the actual size of the list. In such
-			//	case, only that number of items will be returned
-			theNumberItemsToFetch = inDataSize / sizeof(AudioObjectID);
-			
-			//	Clamp that to the number of boxes this driver implements (which is just 1)
+			//	Clamp that to the number of devices this driver implements (which is just 1)
 			if(theNumberItemsToFetch > 1)
 			{
 				theNumberItemsToFetch = 1;
@@ -1101,52 +1003,9 @@ static OSStatus	LoopbackAudio_GetPlugInPropertyData(AudioServerPlugInDriverRef i
 			//	Write the devices' object IDs into the return value
 			if(theNumberItemsToFetch > 0)
 			{
-				((AudioObjectID*)outData)[0] = kObjectID_Box;
-			}
-			
-			//	Return how many bytes we wrote to
-			*outDataSize = theNumberItemsToFetch * sizeof(AudioClassID);
-			break;
-			
-		case kAudioPlugInPropertyTranslateUIDToBox:
-			//	This property takes the CFString passed in the qualifier and converts that
-			//	to the object ID of the box it corresponds to. For this driver, there is
-			//	just the one box. Note that it is not an error if the string in the
-			//	qualifier doesn't match any devices. In such case, kAudioObjectUnknown is
-			//	the object ID to return.
-			FailWithAction(inDataSize < sizeof(AudioObjectID), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetPlugInPropertyData: not enough space for the return value of kAudioPlugInPropertyTranslateUIDToBox");
-			FailWithAction(inQualifierDataSize == sizeof(CFStringRef), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetPlugInPropertyData: the qualifier is the wrong size for kAudioPlugInPropertyTranslateUIDToBox");
-			FailWithAction(inQualifierData == NULL, theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetPlugInPropertyData: no qualifier for kAudioPlugInPropertyTranslateUIDToBox");
-			if(CFStringCompare(*((CFStringRef*)inQualifierData), CFSTR(kBox_UID), 0) == kCFCompareEqualTo)
-			{
-				*((AudioObjectID*)outData) = kObjectID_Box;
-			}
-			else
-			{
-				*((AudioObjectID*)outData) = kAudioObjectUnknown;
-			}
-			*outDataSize = sizeof(AudioObjectID);
-			break;
-			
-		case kAudioPlugInPropertyDeviceList:
-			//	Calculate the number of items that have been requested. Note that this
-			//	number is allowed to be smaller than the actual size of the list. In such
-			//	case, only that number of items will be returned
-			theNumberItemsToFetch = inDataSize / sizeof(AudioObjectID);
-			
-			//	Clamp that to the number of devices this driver implements (which is just 1 if the
-			//	box has been acquired)
-			if(theNumberItemsToFetch > (gBox_Acquired ? 1 : 0))
-			{
-				theNumberItemsToFetch = (gBox_Acquired ? 1 : 0);
-			}
-			
-			//	Write the devices' object IDs into the return value
-			if(theNumberItemsToFetch > 0)
-			{
 				((AudioObjectID*)outData)[0] = kObjectID_Device;
 			}
-			
+
 			//	Return how many bytes we wrote to
 			*outDataSize = theNumberItemsToFetch * sizeof(AudioClassID);
 			break;
@@ -1220,499 +1079,6 @@ Done:
 	return theAnswer;
 }
 
-#pragma mark Box Property Operations
-
-static Boolean	LoopbackAudio_HasBoxProperty(AudioServerPlugInDriverRef inDriver, AudioObjectID inObjectID, pid_t inClientProcessID, const AudioObjectPropertyAddress* inAddress)
-{
-	//	This method returns whether or not the box object has the given property.
-	
-	#pragma unused(inClientProcessID)
-	
-	//	declare the local variables
-	Boolean theAnswer = false;
-	
-	//	check the arguments
-	FailIf(inDriver != gAudioServerPlugInDriverRef, Done, "LoopbackAudio_HasBoxProperty: bad driver reference");
-	FailIf(inAddress == NULL, Done, "LoopbackAudio_HasBoxProperty: no address");
-	FailIf(inObjectID != kObjectID_Box, Done, "LoopbackAudio_HasBoxProperty: not the box object");
-	
-	
-	//	Note that for each object, this driver implements all the required properties plus a few
-	//	extras that are useful but not required. There is more detailed commentary about each
-	//	property in the LoopbackAudio_GetBoxPropertyData() method.
-	switch(inAddress->mSelector)
-	{
-		case kAudioObjectPropertyBaseClass:
-		case kAudioObjectPropertyClass:
-		case kAudioObjectPropertyOwner:
-		case kAudioObjectPropertyName:
-		case kAudioObjectPropertyModelName:
-		case kAudioObjectPropertyManufacturer:
-		case kAudioObjectPropertyOwnedObjects:
-		case kAudioObjectPropertyIdentify:
-		case kAudioObjectPropertySerialNumber:
-		case kAudioObjectPropertyFirmwareVersion:
-		case kAudioBoxPropertyBoxUID:
-		case kAudioBoxPropertyTransportType:
-		case kAudioBoxPropertyHasAudio:
-		case kAudioBoxPropertyHasVideo:
-		case kAudioBoxPropertyHasMIDI:
-		case kAudioBoxPropertyIsProtected:
-		case kAudioBoxPropertyAcquired:
-		case kAudioBoxPropertyAcquisitionFailed:
-		case kAudioBoxPropertyDeviceList:
-			theAnswer = true;
-			break;
-	};
-
-Done:
-	return theAnswer;
-}
-
-static OSStatus	LoopbackAudio_IsBoxPropertySettable(AudioServerPlugInDriverRef inDriver, AudioObjectID inObjectID, pid_t inClientProcessID, const AudioObjectPropertyAddress* inAddress, Boolean* outIsSettable)
-{
-	//	This method returns whether or not the given property on the plug-in object can have its
-	//	value changed.
-	
-	#pragma unused(inClientProcessID)
-	
-	//	declare the local variables
-	OSStatus theAnswer = 0;
-	
-	//	check the arguments
-	FailWithAction(inDriver != gAudioServerPlugInDriverRef, theAnswer = kAudioHardwareBadObjectError, Done, "LoopbackAudio_IsBoxPropertySettable: bad driver reference");
-	FailWithAction(inAddress == NULL, theAnswer = kAudioHardwareIllegalOperationError, Done, "LoopbackAudio_IsBoxPropertySettable: no address");
-	FailWithAction(outIsSettable == NULL, theAnswer = kAudioHardwareIllegalOperationError, Done, "LoopbackAudio_IsBoxPropertySettable: no place to put the return value");
-	FailWithAction(inObjectID != kObjectID_Box, theAnswer = kAudioHardwareBadObjectError, Done, "LoopbackAudio_IsBoxPropertySettable: not the plug-in object");
-	
-	//	Note that for each object, this driver implements all the required properties plus a few
-	//	extras that are useful but not required. There is more detailed commentary about each
-	//	property in the LoopbackAudio_GetBoxPropertyData() method.
-	switch(inAddress->mSelector)
-	{
-		case kAudioObjectPropertyBaseClass:
-		case kAudioObjectPropertyClass:
-		case kAudioObjectPropertyOwner:
-		case kAudioObjectPropertyModelName:
-		case kAudioObjectPropertyManufacturer:
-		case kAudioObjectPropertyOwnedObjects:
-		case kAudioObjectPropertySerialNumber:
-		case kAudioObjectPropertyFirmwareVersion:
-		case kAudioBoxPropertyBoxUID:
-		case kAudioBoxPropertyTransportType:
-		case kAudioBoxPropertyHasAudio:
-		case kAudioBoxPropertyHasVideo:
-		case kAudioBoxPropertyHasMIDI:
-		case kAudioBoxPropertyIsProtected:
-		case kAudioBoxPropertyAcquisitionFailed:
-		case kAudioBoxPropertyDeviceList:
-			*outIsSettable = false;
-			break;
-		
-		case kAudioObjectPropertyName:
-		case kAudioObjectPropertyIdentify:
-		case kAudioBoxPropertyAcquired:
-			*outIsSettable = true;
-			break;
-		
-		default:
-			theAnswer = kAudioHardwareUnknownPropertyError;
-			break;
-	};
-
-Done:
-	return theAnswer;
-}
-
-static OSStatus	LoopbackAudio_GetBoxPropertyDataSize(AudioServerPlugInDriverRef inDriver, AudioObjectID inObjectID, pid_t inClientProcessID, const AudioObjectPropertyAddress* inAddress, UInt32 inQualifierDataSize, const void* inQualifierData, UInt32* outDataSize)
-{
-	//	This method returns the byte size of the property's data.
-	
-	#pragma unused(inClientProcessID, inQualifierDataSize, inQualifierData)
-	
-	//	declare the local variables
-	OSStatus theAnswer = 0;
-	
-	//	check the arguments
-	FailWithAction(inDriver != gAudioServerPlugInDriverRef, theAnswer = kAudioHardwareBadObjectError, Done, "LoopbackAudio_GetBoxPropertyDataSize: bad driver reference");
-	FailWithAction(inAddress == NULL, theAnswer = kAudioHardwareIllegalOperationError, Done, "LoopbackAudio_GetBoxPropertyDataSize: no address");
-	FailWithAction(outDataSize == NULL, theAnswer = kAudioHardwareIllegalOperationError, Done, "LoopbackAudio_GetBoxPropertyDataSize: no place to put the return value");
-	FailWithAction(inObjectID != kObjectID_Box, theAnswer = kAudioHardwareBadObjectError, Done, "LoopbackAudio_GetBoxPropertyDataSize: not the plug-in object");
-	
-	//	Note that for each object, this driver implements all the required properties plus a few
-	//	extras that are useful but not required. There is more detailed commentary about each
-	//	property in the LoopbackAudio_GetBoxPropertyData() method.
-	switch(inAddress->mSelector)
-	{
-		case kAudioObjectPropertyBaseClass:
-			*outDataSize = sizeof(AudioClassID);
-			break;
-			
-		case kAudioObjectPropertyClass:
-			*outDataSize = sizeof(AudioClassID);
-			break;
-			
-		case kAudioObjectPropertyOwner:
-			*outDataSize = sizeof(AudioObjectID);
-			break;
-			
-		case kAudioObjectPropertyName:
-			*outDataSize = sizeof(CFStringRef);
-			break;
-			
-		case kAudioObjectPropertyModelName:
-			*outDataSize = sizeof(CFStringRef);
-			break;
-			
-		case kAudioObjectPropertyManufacturer:
-			*outDataSize = sizeof(CFStringRef);
-			break;
-			
-		case kAudioObjectPropertyOwnedObjects:
-			*outDataSize = 0;
-			break;
-			
-		case kAudioObjectPropertyIdentify:
-			*outDataSize = sizeof(UInt32);
-			break;
-			
-		case kAudioObjectPropertySerialNumber:
-			*outDataSize = sizeof(CFStringRef);
-			break;
-			
-		case kAudioObjectPropertyFirmwareVersion:
-			*outDataSize = sizeof(CFStringRef);
-			break;
-			
-		case kAudioBoxPropertyBoxUID:
-			*outDataSize = sizeof(CFStringRef);
-			break;
-			
-		case kAudioBoxPropertyTransportType:
-			*outDataSize = sizeof(UInt32);
-			break;
-			
-		case kAudioBoxPropertyHasAudio:
-			*outDataSize = sizeof(UInt32);
-			break;
-			
-		case kAudioBoxPropertyHasVideo:
-			*outDataSize = sizeof(UInt32);
-			break;
-			
-		case kAudioBoxPropertyHasMIDI:
-			*outDataSize = sizeof(UInt32);
-			break;
-			
-		case kAudioBoxPropertyIsProtected:
-			*outDataSize = sizeof(UInt32);
-			break;
-			
-		case kAudioBoxPropertyAcquired:
-			*outDataSize = sizeof(UInt32);
-			break;
-			
-		case kAudioBoxPropertyAcquisitionFailed:
-			*outDataSize = sizeof(UInt32);
-			break;
-			
-		case kAudioBoxPropertyDeviceList:
-			{
-				pthread_mutex_lock(&gPlugIn_StateMutex);
-				*outDataSize = gBox_Acquired ? sizeof(AudioObjectID) : 0;
-				pthread_mutex_unlock(&gPlugIn_StateMutex);
-			}
-			break;
-			
-		default:
-			theAnswer = kAudioHardwareUnknownPropertyError;
-			break;
-	};
-
-Done:
-	return theAnswer;
-}
-
-static OSStatus	LoopbackAudio_GetBoxPropertyData(AudioServerPlugInDriverRef inDriver, AudioObjectID inObjectID, pid_t inClientProcessID, const AudioObjectPropertyAddress* inAddress, UInt32 inQualifierDataSize, const void* inQualifierData, UInt32 inDataSize, UInt32* outDataSize, void* outData)
-{
-	#pragma unused(inClientProcessID, inQualifierDataSize, inQualifierData)
-	
-	//	declare the local variables
-	OSStatus theAnswer = 0;
-	
-	//	check the arguments
-	FailWithAction(inDriver != gAudioServerPlugInDriverRef, theAnswer = kAudioHardwareBadObjectError, Done, "LoopbackAudio_GetBoxPropertyData: bad driver reference");
-	FailWithAction(inAddress == NULL, theAnswer = kAudioHardwareIllegalOperationError, Done, "LoopbackAudio_GetBoxPropertyData: no address");
-	FailWithAction(outDataSize == NULL, theAnswer = kAudioHardwareIllegalOperationError, Done, "LoopbackAudio_GetBoxPropertyData: no place to put the return value size");
-	FailWithAction(outData == NULL, theAnswer = kAudioHardwareIllegalOperationError, Done, "LoopbackAudio_GetBoxPropertyData: no place to put the return value");
-	FailWithAction(inObjectID != kObjectID_Box, theAnswer = kAudioHardwareBadObjectError, Done, "LoopbackAudio_GetBoxPropertyData: not the plug-in object");
-	
-	//	Note that for each object, this driver implements all the required properties plus a few
-	//	extras that are useful but not required.
-	//
-	//	Also, since most of the data that will get returned is static, there are few instances where
-	//	it is necessary to lock the state mutex.
-	switch(inAddress->mSelector)
-	{
-		case kAudioObjectPropertyBaseClass:
-			//	The base class for kAudioBoxClassID is kAudioObjectClassID
-			FailWithAction(inDataSize < sizeof(AudioClassID), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetBoxPropertyData: not enough space for the return value of kAudioObjectPropertyBaseClass for the box");
-			*((AudioClassID*)outData) = kAudioObjectClassID;
-			*outDataSize = sizeof(AudioClassID);
-			break;
-			
-		case kAudioObjectPropertyClass:
-			//	The class is always kAudioBoxClassID for regular drivers
-			FailWithAction(inDataSize < sizeof(AudioClassID), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetBoxPropertyData: not enough space for the return value of kAudioObjectPropertyClass for the box");
-			*((AudioClassID*)outData) = kAudioBoxClassID;
-			*outDataSize = sizeof(AudioClassID);
-			break;
-			
-		case kAudioObjectPropertyOwner:
-			//	The owner is the plug-in object
-			FailWithAction(inDataSize < sizeof(AudioObjectID), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetBoxPropertyData: not enough space for the return value of kAudioObjectPropertyOwner for the box");
-			*((AudioObjectID*)outData) = kObjectID_PlugIn;
-			*outDataSize = sizeof(AudioObjectID);
-			break;
-			
-		case kAudioObjectPropertyName:
-			//	This is the human readable name of the maker of the box.
-			FailWithAction(inDataSize < sizeof(CFStringRef), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetBoxPropertyData: not enough space for the return value of kAudioObjectPropertyManufacturer for the box");
-			pthread_mutex_lock(&gPlugIn_StateMutex);
-			*((CFStringRef*)outData) = gBox_Name;
-			pthread_mutex_unlock(&gPlugIn_StateMutex);
-			if(*((CFStringRef*)outData) != NULL)
-			{
-				CFRetain(*((CFStringRef*)outData));
-			}
-			*outDataSize = sizeof(CFStringRef);
-			break;
-			
-		case kAudioObjectPropertyModelName:
-			//	This is the human readable name of the maker of the box.
-			FailWithAction(inDataSize < sizeof(CFStringRef), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetBoxPropertyData: not enough space for the return value of kAudioObjectPropertyManufacturer for the box");
-			*((CFStringRef*)outData) = CFSTR("Null Model");
-			*outDataSize = sizeof(CFStringRef);
-			break;
-			
-		case kAudioObjectPropertyManufacturer:
-			//	This is the human readable name of the maker of the box.
-			FailWithAction(inDataSize < sizeof(CFStringRef), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetBoxPropertyData: not enough space for the return value of kAudioObjectPropertyManufacturer for the box");
-			*((CFStringRef*)outData) = CFSTR("Apple Inc.");
-			*outDataSize = sizeof(CFStringRef);
-			break;
-			
-		case kAudioObjectPropertyOwnedObjects:
-			//	This returns the objects directly owned by the object. Boxes don't own anything.
-			*outDataSize = 0;
-			break;
-			
-		case kAudioObjectPropertyIdentify:
-			//	This is used to highling the device in the UI, but it's value has no meaning
-			FailWithAction(inDataSize < sizeof(UInt32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetBoxPropertyData: not enough space for the return value of kAudioObjectPropertyIdentify for the box");
-			*((UInt32*)outData) = 0;
-			*outDataSize = sizeof(UInt32);
-			break;
-			
-		case kAudioObjectPropertySerialNumber:
-			//	This is the human readable serial number of the box.
-			FailWithAction(inDataSize < sizeof(CFStringRef), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetBoxPropertyData: not enough space for the return value of kAudioObjectPropertySerialNumber for the box");
-			*((CFStringRef*)outData) = CFSTR("00000001");
-			*outDataSize = sizeof(CFStringRef);
-			break;
-			
-		case kAudioObjectPropertyFirmwareVersion:
-			//	This is the human readable firmware version of the box.
-			FailWithAction(inDataSize < sizeof(CFStringRef), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetBoxPropertyData: not enough space for the return value of kAudioObjectPropertyFirmwareVersion for the box");
-			*((CFStringRef*)outData) = CFSTR("1.0");
-			*outDataSize = sizeof(CFStringRef);
-			break;
-			
-		case kAudioBoxPropertyBoxUID:
-			//	Boxes have UIDs the same as devices
-			FailWithAction(inDataSize < sizeof(CFStringRef), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetBoxPropertyData: not enough space for the return value of kAudioObjectPropertyManufacturer for the box");
-			*((CFStringRef*)outData) = CFSTR(kBox_UID);
-			break;
-			
-		case kAudioBoxPropertyTransportType:
-			//	This value represents how the device is attached to the system. This can be
-			//	any 32 bit integer, but common values for this property are defined in
-			//	<CoreAudio/AudioHardwareBase.h>
-			FailWithAction(inDataSize < sizeof(UInt32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetBoxPropertyData: not enough space for the return value of kAudioDevicePropertyTransportType for the box");
-			*((UInt32*)outData) = kAudioDeviceTransportTypeVirtual;
-			*outDataSize = sizeof(UInt32);
-			break;
-			
-		case kAudioBoxPropertyHasAudio:
-			//	Indicates whether or not the box has audio capabilities
-			FailWithAction(inDataSize < sizeof(UInt32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetBoxPropertyData: not enough space for the return value of kAudioBoxPropertyHasAudio for the box");
-			*((UInt32*)outData) = 1;
-			*outDataSize = sizeof(UInt32);
-			break;
-			
-		case kAudioBoxPropertyHasVideo:
-			//	Indicates whether or not the box has video capabilities
-			FailWithAction(inDataSize < sizeof(UInt32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetBoxPropertyData: not enough space for the return value of kAudioBoxPropertyHasVideo for the box");
-			*((UInt32*)outData) = 0;
-			*outDataSize = sizeof(UInt32);
-			break;
-			
-		case kAudioBoxPropertyHasMIDI:
-			//	Indicates whether or not the box has MIDI capabilities
-			FailWithAction(inDataSize < sizeof(UInt32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetBoxPropertyData: not enough space for the return value of kAudioBoxPropertyHasMIDI for the box");
-			*((UInt32*)outData) = 0;
-			*outDataSize = sizeof(UInt32);
-			break;
-			
-		case kAudioBoxPropertyIsProtected:
-			//	Indicates whether or not the box has requires authentication to use
-			FailWithAction(inDataSize < sizeof(UInt32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetBoxPropertyData: not enough space for the return value of kAudioBoxPropertyIsProtected for the box");
-			*((UInt32*)outData) = 0;
-			*outDataSize = sizeof(UInt32);
-			break;
-			
-		case kAudioBoxPropertyAcquired:
-			//	When set to a non-zero value, the device is acquired for use by the local machine
-			FailWithAction(inDataSize < sizeof(UInt32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetBoxPropertyData: not enough space for the return value of kAudioBoxPropertyAcquired for the box");
-			pthread_mutex_lock(&gPlugIn_StateMutex);
-			*((UInt32*)outData) = gBox_Acquired ? 1 : 0;
-			pthread_mutex_unlock(&gPlugIn_StateMutex);
-			*outDataSize = sizeof(UInt32);
-			break;
-			
-		case kAudioBoxPropertyAcquisitionFailed:
-			//	This is used for notifications to say when an attempt to acquire a device has failed.
-			FailWithAction(inDataSize < sizeof(UInt32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetBoxPropertyData: not enough space for the return value of kAudioBoxPropertyAcquisitionFailed for the box");
-			*((UInt32*)outData) = 0;
-			*outDataSize = sizeof(UInt32);
-			break;
-			
-		case kAudioBoxPropertyDeviceList:
-			//	This is used to indicate which devices came from this box
-			pthread_mutex_lock(&gPlugIn_StateMutex);
-			if(gBox_Acquired)
-			{
-				FailWithAction(inDataSize < sizeof(AudioObjectID), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetBoxPropertyData: not enough space for the return value of kAudioBoxPropertyDeviceList for the box");
-				*((AudioObjectID*)outData) = kObjectID_Device;
-				*outDataSize = sizeof(AudioObjectID);
-			}
-			else
-			{
-				*outDataSize = 0;
-			}
-			pthread_mutex_unlock(&gPlugIn_StateMutex);
-			break;
-			
-		default:
-			theAnswer = kAudioHardwareUnknownPropertyError;
-			break;
-	};
-
-Done:
-	return theAnswer;
-}
-
-static OSStatus	LoopbackAudio_SetBoxPropertyData(AudioServerPlugInDriverRef inDriver, AudioObjectID inObjectID, pid_t inClientProcessID, const AudioObjectPropertyAddress* inAddress, UInt32 inQualifierDataSize, const void* inQualifierData, UInt32 inDataSize, const void* inData, UInt32* outNumberPropertiesChanged, AudioObjectPropertyAddress outChangedAddresses[2])
-{
-	#pragma unused(inClientProcessID, inQualifierDataSize, inQualifierData, inDataSize, inData)
-	
-	//	declare the local variables
-	OSStatus theAnswer = 0;
-	
-	//	check the arguments
-	FailWithAction(inDriver != gAudioServerPlugInDriverRef, theAnswer = kAudioHardwareBadObjectError, Done, "LoopbackAudio_SetBoxPropertyData: bad driver reference");
-	FailWithAction(inAddress == NULL, theAnswer = kAudioHardwareIllegalOperationError, Done, "LoopbackAudio_SetBoxPropertyData: no address");
-	FailWithAction(outNumberPropertiesChanged == NULL, theAnswer = kAudioHardwareIllegalOperationError, Done, "LoopbackAudio_SetBoxPropertyData: no place to return the number of properties that changed");
-	FailWithAction(outChangedAddresses == NULL, theAnswer = kAudioHardwareIllegalOperationError, Done, "LoopbackAudio_SetBoxPropertyData: no place to return the properties that changed");
-	FailWithAction(inObjectID != kObjectID_Box, theAnswer = kAudioHardwareBadObjectError, Done, "LoopbackAudio_SetBoxPropertyData: not the box object");
-	
-	//	initialize the returned number of changed properties
-	*outNumberPropertiesChanged = 0;
-	
-	//	Note that for each object, this driver implements all the required properties plus a few
-	//	extras that are useful but not required. There is more detailed commentary about each
-	//	property in the LoopbackAudio_GetPlugInPropertyData() method.
-	switch(inAddress->mSelector)
-	{
-		case kAudioObjectPropertyName:
-			//	Boxes should allow their name to be editable
-			{
-				FailWithAction(inDataSize != sizeof(CFStringRef), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_SetBoxPropertyData: wrong size for the data for kAudioObjectPropertyName");
-				CFStringRef* theNewName = (CFStringRef*)inData;
-				pthread_mutex_lock(&gPlugIn_StateMutex);
-				if((theNewName != NULL) && (*theNewName != NULL))
-				{
-					CFRetain(*theNewName);
-				}
-				if(gBox_Name != NULL)
-				{
-					CFRelease(gBox_Name);
-				}
-				gBox_Name = *theNewName;
-				pthread_mutex_unlock(&gPlugIn_StateMutex);
-				*outNumberPropertiesChanged = 1;
-				outChangedAddresses[0].mSelector = kAudioObjectPropertyName;
-				outChangedAddresses[0].mScope = kAudioObjectPropertyScopeGlobal;
-				outChangedAddresses[0].mElement = kAudioObjectPropertyElementMaster;
-			}
-			break;
-			
-		case kAudioObjectPropertyIdentify:
-			//	since we don't have any actual hardware to flash, we will schedule a notificaiton for
-			//	this property off into the future as a testing thing. Note that a real implementation
-			//	of this property should only send the notificaiton if the hardware wants the app to
-			//	flash it's UI for the device.
-			{
-				syslog(LOG_NOTICE, "The identify property has been set on the Box implemented by the LoopbackAudio driver.");
-				FailWithAction(inDataSize != sizeof(UInt32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_SetBoxPropertyData: wrong size for the data for kAudioObjectPropertyIdentify");
-				dispatch_after(dispatch_time(0, 2ULL * 1000ULL * 1000ULL * 1000ULL), dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),	^()
-																																		{
-																																			AudioObjectPropertyAddress theAddress = { kAudioObjectPropertyIdentify, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMaster };
-																																			gPlugIn_Host->PropertiesChanged(gPlugIn_Host, kObjectID_Box, 1, &theAddress);
-																																		});
-			}
-			break;
-			
-		case kAudioBoxPropertyAcquired:
-			//	When the box is acquired, it means the contents, namely the device, are available to the system
-			{
-				FailWithAction(inDataSize != sizeof(UInt32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_SetBoxPropertyData: wrong size for the data for kAudioBoxPropertyAcquired");
-				pthread_mutex_lock(&gPlugIn_StateMutex);
-				if(gBox_Acquired != (*((UInt32*)inData) != 0))
-				{
-					//	the new value is different from the old value, so save it
-					gBox_Acquired = *((UInt32*)inData) != 0;
-					gPlugIn_Host->WriteToStorage(gPlugIn_Host, CFSTR("box acquired"), gBox_Acquired ? kCFBooleanTrue : kCFBooleanFalse);
-					
-					//	and it means that this property and the device list property have changed
-					*outNumberPropertiesChanged = 2;
-					outChangedAddresses[0].mSelector = kAudioBoxPropertyAcquired;
-					outChangedAddresses[0].mScope = kAudioObjectPropertyScopeGlobal;
-					outChangedAddresses[0].mElement = kAudioObjectPropertyElementMaster;
-					outChangedAddresses[1].mSelector = kAudioBoxPropertyDeviceList;
-					outChangedAddresses[1].mScope = kAudioObjectPropertyScopeGlobal;
-					outChangedAddresses[1].mElement = kAudioObjectPropertyElementMaster;
-					
-					//	but it also means that the device list has changed for the plug-in too
-					dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),	^()
-																									{
-																										AudioObjectPropertyAddress theAddress = { kAudioPlugInPropertyDeviceList, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMaster };
-																										gPlugIn_Host->PropertiesChanged(gPlugIn_Host, kObjectID_PlugIn, 1, &theAddress);
-																									});
-				}
-				pthread_mutex_unlock(&gPlugIn_StateMutex);
-			}
-			break;
-			
-		default:
-			theAnswer = kAudioHardwareUnknownPropertyError;
-			break;
-	};
-
-Done:
-	return theAnswer;
-}
-
 #pragma mark Device Property Operations
 
 static Boolean	LoopbackAudio_HasDeviceProperty(AudioServerPlugInDriverRef inDriver, AudioObjectID inObjectID, pid_t inClientProcessID, const AudioObjectPropertyAddress* inAddress)
@@ -1739,7 +1105,6 @@ static Boolean	LoopbackAudio_HasDeviceProperty(AudioServerPlugInDriverRef inDriv
 		case kAudioObjectPropertyOwner:
 		case kAudioObjectPropertyName:
 		case kAudioObjectPropertyManufacturer:
-		case kAudioObjectPropertyOwnedObjects:
 		case kAudioDevicePropertyDeviceUID:
 		case kAudioDevicePropertyModelUID:
 		case kAudioDevicePropertyTransportType:
@@ -1752,9 +1117,12 @@ static Boolean	LoopbackAudio_HasDeviceProperty(AudioServerPlugInDriverRef inDriv
 		case kAudioDevicePropertyAvailableNominalSampleRates:
 		case kAudioDevicePropertyIsHidden:
 		case kAudioDevicePropertyZeroTimeStampPeriod:
-		case kAudioDevicePropertyIcon:
+			theAnswer = (inAddress->mScope == kAudioObjectPropertyScopeGlobal) && (inAddress->mElement == kAudioObjectPropertyElementMaster);
+			break;
+
+		case kAudioObjectPropertyOwnedObjects:
 		case kAudioDevicePropertyStreams:
-			theAnswer = true;
+			theAnswer = ((inAddress->mScope == kAudioObjectPropertyScopeGlobal) || (inAddress->mScope == kAudioObjectPropertyScopeInput) || (inAddress->mScope == kAudioObjectPropertyScopeOutput)) && (inAddress->mElement == kAudioObjectPropertyElementMaster);
 			break;
 			
 		case kAudioDevicePropertyDeviceCanBeDefaultDevice:
@@ -1763,7 +1131,7 @@ static Boolean	LoopbackAudio_HasDeviceProperty(AudioServerPlugInDriverRef inDriv
 		case kAudioDevicePropertySafetyOffset:
 		case kAudioDevicePropertyPreferredChannelsForStereo:
 		case kAudioDevicePropertyPreferredChannelLayout:
-			theAnswer = (inAddress->mScope == kAudioObjectPropertyScopeInput) || (inAddress->mScope == kAudioObjectPropertyScopeOutput);
+			theAnswer = ((inAddress->mScope == kAudioObjectPropertyScopeInput) || (inAddress->mScope == kAudioObjectPropertyScopeOutput)) && (inAddress->mElement == kAudioObjectPropertyElementMaster);
 			break;
 	};
 
@@ -1816,7 +1184,6 @@ static OSStatus	LoopbackAudio_IsDevicePropertySettable(AudioServerPlugInDriverRe
 		case kAudioDevicePropertyPreferredChannelsForStereo:
 		case kAudioDevicePropertyPreferredChannelLayout:
 		case kAudioDevicePropertyZeroTimeStampPeriod:
-		case kAudioDevicePropertyIcon:
 			*outIsSettable = false;
 			break;
 		
@@ -1877,15 +1244,15 @@ static OSStatus	LoopbackAudio_GetDevicePropertyDataSize(AudioServerPlugInDriverR
 			switch(inAddress->mScope)
 			{
 				case kAudioObjectPropertyScopeGlobal:
-					*outDataSize = 8 * sizeof(AudioObjectID);
+					*outDataSize = 3 * sizeof(AudioObjectID);
 					break;
 					
 				case kAudioObjectPropertyScopeInput:
-					*outDataSize = 4 * sizeof(AudioObjectID);
+					*outDataSize = 1 * sizeof(AudioObjectID);
 					break;
 					
 				case kAudioObjectPropertyScopeOutput:
-					*outDataSize = 4 * sizeof(AudioObjectID);
+					*outDataSize = 2 * sizeof(AudioObjectID);
 					break;
 			};
 			break;
@@ -1948,7 +1315,7 @@ static OSStatus	LoopbackAudio_GetDevicePropertyDataSize(AudioServerPlugInDriverR
 			break;
 
 		case kAudioObjectPropertyControlList:
-			*outDataSize = 6 * sizeof(AudioObjectID);
+			*outDataSize = 1 * sizeof(AudioObjectID);
 			break;
 
 		case kAudioDevicePropertySafetyOffset:
@@ -1960,7 +1327,7 @@ static OSStatus	LoopbackAudio_GetDevicePropertyDataSize(AudioServerPlugInDriverR
 			break;
 
 		case kAudioDevicePropertyAvailableNominalSampleRates:
-			*outDataSize = 2 * sizeof(AudioValueRange);
+			*outDataSize = kNumSupportedSampleRates * sizeof(AudioValueRange);
 			break;
 		
 		case kAudioDevicePropertyIsHidden:
@@ -1972,15 +1339,11 @@ static OSStatus	LoopbackAudio_GetDevicePropertyDataSize(AudioServerPlugInDriverR
 			break;
 
 		case kAudioDevicePropertyPreferredChannelLayout:
-			*outDataSize = offsetof(AudioChannelLayout, mChannelDescriptions) + (2 * sizeof(AudioChannelDescription));
+			*outDataSize = offsetof(AudioChannelLayout, mChannelDescriptions) + (gDevice_CurrentFormat.mChannelsPerFrame * sizeof(AudioChannelDescription));
 			break;
 
 		case kAudioDevicePropertyZeroTimeStampPeriod:
 			*outDataSize = sizeof(UInt32);
-			break;
-
-		case kAudioDevicePropertyIcon:
-			*outDataSize = sizeof(CFURLRef);
 			break;
 
 		default:
@@ -2062,9 +1425,9 @@ static OSStatus	LoopbackAudio_GetDevicePropertyData(AudioServerPlugInDriverRef i
 			{
 				case kAudioObjectPropertyScopeGlobal:
 					//	global scope means return all objects
-					if(theNumberItemsToFetch > 8)
+					if(theNumberItemsToFetch > 3)
 					{
-						theNumberItemsToFetch = 8;
+						theNumberItemsToFetch = 3;
 					}
 					
 					//	fill out the list with as many objects as requested, which is everything
@@ -2076,9 +1439,9 @@ static OSStatus	LoopbackAudio_GetDevicePropertyData(AudioServerPlugInDriverRef i
 					
 				case kAudioObjectPropertyScopeInput:
 					//	input scope means just the objects on the input side
-					if(theNumberItemsToFetch > 4)
+					if(theNumberItemsToFetch > 1)
 					{
-						theNumberItemsToFetch = 4;
+						theNumberItemsToFetch = 1;
 					}
 					
 					//	fill out the list with the right objects
@@ -2090,9 +1453,9 @@ static OSStatus	LoopbackAudio_GetDevicePropertyData(AudioServerPlugInDriverRef i
 					
 				case kAudioObjectPropertyScopeOutput:
 					//	output scope means just the objects on the output side
-					if(theNumberItemsToFetch > 4)
+					if(theNumberItemsToFetch > 2)
 					{
-						theNumberItemsToFetch = 4;
+						theNumberItemsToFetch = 2;
 					}
 					
 					//	fill out the list with the right objects
@@ -2201,7 +1564,7 @@ static OSStatus	LoopbackAudio_GetDevicePropertyData(AudioServerPlugInDriverRef i
 			//	will use to play their content on and FaceTime will use as it's microhphone.
 			//	Nearly all devices should allow for this.
 			FailWithAction(inDataSize < sizeof(UInt32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetDevicePropertyData: not enough space for the return value of kAudioDevicePropertyDeviceCanBeDefaultDevice for the device");
-			*((UInt32*)outData) = 1;
+			*((UInt32*)outData) = 1; // CHECKME: maybe this should only be true for the output stream?
 			*outDataSize = sizeof(UInt32);
 			break;
 
@@ -2219,7 +1582,7 @@ static OSStatus	LoopbackAudio_GetDevicePropertyData(AudioServerPlugInDriverRef i
 			//	This property returns the presentation latency of the device. For this,
 			//	device, the value is 0 due to the fact that it always vends silence.
 			FailWithAction(inDataSize < sizeof(UInt32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetDevicePropertyData: not enough space for the return value of kAudioDevicePropertyLatency for the device");
-			*((UInt32*)outData) = 0;
+			*((UInt32*)outData) = 0; // FIXME frame-size?
 			*outDataSize = sizeof(UInt32);
 			break;
 
@@ -2288,24 +1651,14 @@ static OSStatus	LoopbackAudio_GetDevicePropertyData(AudioServerPlugInDriverRef i
 			//	number is allowed to be smaller than the actual size of the list. In such
 			//	case, only that number of items will be returned
 			theNumberItemsToFetch = inDataSize / sizeof(AudioObjectID);
-			if(theNumberItemsToFetch > 6)
+			if(theNumberItemsToFetch > 1)
 			{
-				theNumberItemsToFetch = 6;
+				theNumberItemsToFetch = 1;
 			}
 			
-			//	fill out the list with as many objects as requested, which is everything
-			for(theItemIndex = 0; theItemIndex < theNumberItemsToFetch; ++theItemIndex)
-			{
-				if(theItemIndex < 3)
-				{
-					((AudioObjectID*)outData)[theItemIndex] = kObjectID_Volume_Input_Master + theItemIndex;
-				}
-				else
-				{
-					((AudioObjectID*)outData)[theItemIndex] = kObjectID_Volume_Output_Master + (theItemIndex - 3);
-				}
-			}
-			
+			// we only have a single control (output mute)
+			*(AudioObjectID*)outData = kObjectID_Mute_Output_Master;
+
 			//	report how much we wrote
 			*outDataSize = theNumberItemsToFetch * sizeof(AudioObjectID);
 			break;
@@ -2314,7 +1667,7 @@ static OSStatus	LoopbackAudio_GetDevicePropertyData(AudioServerPlugInDriverRef i
 			//	This property returns the how close to now the HAL can read and write. For
 			//	this, device, the value is 0 due to the fact that it always vends silence.
 			FailWithAction(inDataSize < sizeof(UInt32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetDevicePropertyData: not enough space for the return value of kAudioDevicePropertySafetyOffset for the device");
-			*((UInt32*)outData) = 0;
+			*((UInt32*)outData) = 10; // FIXME why?
 			*outDataSize = sizeof(UInt32);
 			break;
 
@@ -2323,14 +1676,14 @@ static OSStatus	LoopbackAudio_GetDevicePropertyData(AudioServerPlugInDriverRef i
 			//	only need to take the state lock to get this value.
 			FailWithAction(inDataSize < sizeof(Float64), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetDevicePropertyData: not enough space for the return value of kAudioDevicePropertyNominalSampleRate for the device");
 			pthread_mutex_lock(&gPlugIn_StateMutex);
-			*((Float64*)outData) = gDevice_SampleRate;
+			*((Float64*)outData) = gDevice_CurrentFormat.mSampleRate;
 			pthread_mutex_unlock(&gPlugIn_StateMutex);
 			*outDataSize = sizeof(Float64);
 			break;
 
 		case kAudioDevicePropertyAvailableNominalSampleRates:
 			//	This returns all nominal sample rates the device supports as an array of
-			//	AudioValueRangeStructs. Note that for discrete sampler rates, the range
+			//	AudioValueRangeStructs. Note that for discrete sample rates, the range
 			//	will have the minimum value equal to the maximum value.
 			
 			//	Calculate the number of items that have been requested. Note that this
@@ -2339,23 +1692,18 @@ static OSStatus	LoopbackAudio_GetDevicePropertyData(AudioServerPlugInDriverRef i
 			theNumberItemsToFetch = inDataSize / sizeof(AudioValueRange);
 			
 			//	clamp it to the number of items we have
-			if(theNumberItemsToFetch > 2)
+			if(theNumberItemsToFetch > kNumSupportedSampleRates)
 			{
-				theNumberItemsToFetch = 2;
+				theNumberItemsToFetch = kNumSupportedSampleRates;
 			}
 			
 			//	fill out the return array
-			if(theNumberItemsToFetch > 0)
+			for(theItemIndex = 0; theItemIndex < theNumberItemsToFetch; ++theItemIndex)
 			{
-				((AudioValueRange*)outData)[0].mMinimum = 44100.0;
-				((AudioValueRange*)outData)[0].mMaximum = 44100.0;
+				((AudioValueRange*)outData)[theItemIndex].mMinimum = kSupportedSampleRates[theItemIndex];
+				((AudioValueRange*)outData)[theItemIndex].mMaximum = kSupportedSampleRates[theItemIndex];
 			}
-			if(theNumberItemsToFetch > 1)
-			{
-				((AudioValueRange*)outData)[1].mMinimum = 48000.0;
-				((AudioValueRange*)outData)[1].mMaximum = 48000.0;
-			}
-			
+
 			//	report how much we wrote
 			*outDataSize = theNumberItemsToFetch * sizeof(AudioValueRange);
 			break;
@@ -2368,31 +1716,65 @@ static OSStatus	LoopbackAudio_GetDevicePropertyData(AudioServerPlugInDriverRef i
 			break;
 
 		case kAudioDevicePropertyPreferredChannelsForStereo:
-			//	This property returns which two channesl to use as left/right for stereo
+			//	This property returns which two channels to use as left/right for stereo
 			//	data by default. Note that the channel numbers are 1-based.xz
 			FailWithAction(inDataSize < (2 * sizeof(UInt32)), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetDevicePropertyData: not enough space for the return value of kAudioDevicePropertyPreferredChannelsForStereo for the device");
 			((UInt32*)outData)[0] = 1;
-			((UInt32*)outData)[1] = 2;
+			pthread_mutex_lock(&gPlugIn_StateMutex);
+			((UInt32*)outData)[1] = (gDevice_CurrentFormat.mChannelsPerFrame > 1) ? 2 : 1;
+			pthread_mutex_unlock(&gPlugIn_StateMutex);
 			*outDataSize = 2 * sizeof(UInt32);
 			break;
 
 		case kAudioDevicePropertyPreferredChannelLayout:
-			//	This property returns the default AudioChannelLayout to use for the device
-			//	by default. For this device, we return a stereo ACL.
+			//	This property returns the default AudioChannelLayout to use for the device by default.
 			{
-				//	calcualte how big the
-				UInt32 theACLSize = offsetof(AudioChannelLayout, mChannelDescriptions) + (2 * sizeof(AudioChannelDescription));
-				FailWithAction(inDataSize < theACLSize, theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetDevicePropertyData: not enough space for the return value of kAudioDevicePropertyPreferredChannelLayout for the device");
+				AudioStreamBasicDescription format;
+				pthread_mutex_lock(&gPlugIn_StateMutex);
+				format = gDevice_CurrentFormat;
+				pthread_mutex_unlock(&gPlugIn_StateMutex);
+				UInt32 theACLSize = offsetof(AudioChannelLayout, mChannelDescriptions) + (format.mChannelsPerFrame * sizeof(AudioChannelDescription));
+				FailWithAction(inDataSize < theACLSize, theAnswer = kAudioHardwareBadPropertySizeError, Done, "Loopback_GetDevicePropertyData: not enough space for the return value of kAudioDevicePropertyPreferredChannelLayout for the device");
+				
+				memset(outData, 0, theACLSize);
 				((AudioChannelLayout*)outData)->mChannelLayoutTag = kAudioChannelLayoutTag_UseChannelDescriptions;
-				((AudioChannelLayout*)outData)->mChannelBitmap = 0;
-				((AudioChannelLayout*)outData)->mNumberChannelDescriptions = 2;
-				for(theItemIndex = 0; theItemIndex < 2; ++theItemIndex)
+				((AudioChannelLayout*)outData)->mNumberChannelDescriptions = format.mChannelsPerFrame;
+				
+				switch(format.mChannelsPerFrame)
 				{
-					((AudioChannelLayout*)outData)->mChannelDescriptions[theItemIndex].mChannelLabel = kAudioChannelLabel_Left + theItemIndex;
-					((AudioChannelLayout*)outData)->mChannelDescriptions[theItemIndex].mChannelFlags = 0;
-					((AudioChannelLayout*)outData)->mChannelDescriptions[theItemIndex].mCoordinates[0] = 0;
-					((AudioChannelLayout*)outData)->mChannelDescriptions[theItemIndex].mCoordinates[1] = 0;
-					((AudioChannelLayout*)outData)->mChannelDescriptions[theItemIndex].mCoordinates[2] = 0;
+					case 1:
+						((AudioChannelLayout*)outData)->mChannelDescriptions[0].mChannelLabel = kAudioChannelLabel_Mono;
+						break;
+					case 2:
+						((AudioChannelLayout*)outData)->mChannelDescriptions[0].mChannelLabel = kAudioChannelLabel_Left;
+						((AudioChannelLayout*)outData)->mChannelDescriptions[1].mChannelLabel = kAudioChannelLabel_Right;
+						break;
+					case 3:
+						((AudioChannelLayout*)outData)->mChannelDescriptions[0].mChannelLabel = kAudioChannelLabel_Left;
+						((AudioChannelLayout*)outData)->mChannelDescriptions[1].mChannelLabel = kAudioChannelLabel_Right;
+						((AudioChannelLayout*)outData)->mChannelDescriptions[2].mChannelLabel = kAudioChannelLabel_CenterSurround;
+						break;
+					case 4:
+						((AudioChannelLayout*)outData)->mChannelDescriptions[0].mChannelLabel = kAudioChannelLabel_Left;
+						((AudioChannelLayout*)outData)->mChannelDescriptions[1].mChannelLabel = kAudioChannelLabel_Right;
+						((AudioChannelLayout*)outData)->mChannelDescriptions[2].mChannelLabel = kAudioChannelLabel_LeftSurround;
+						((AudioChannelLayout*)outData)->mChannelDescriptions[3].mChannelLabel = kAudioChannelLabel_RightSurround;
+						break;
+					case 5:
+						((AudioChannelLayout*)outData)->mChannelDescriptions[0].mChannelLabel = kAudioChannelLabel_Left;
+						((AudioChannelLayout*)outData)->mChannelDescriptions[1].mChannelLabel = kAudioChannelLabel_Right;
+						((AudioChannelLayout*)outData)->mChannelDescriptions[2].mChannelLabel = kAudioChannelLabel_Center;
+						((AudioChannelLayout*)outData)->mChannelDescriptions[3].mChannelLabel = kAudioChannelLabel_LeftSurround;
+						((AudioChannelLayout*)outData)->mChannelDescriptions[4].mChannelLabel = kAudioChannelLabel_RightSurround;
+						break;
+					case 6:
+						((AudioChannelLayout*)outData)->mChannelDescriptions[0].mChannelLabel = kAudioChannelLabel_Left;
+						((AudioChannelLayout*)outData)->mChannelDescriptions[1].mChannelLabel = kAudioChannelLabel_Right;
+						((AudioChannelLayout*)outData)->mChannelDescriptions[2].mChannelLabel = kAudioChannelLabel_Center;
+						((AudioChannelLayout*)outData)->mChannelDescriptions[3].mChannelLabel = kAudioChannelLabel_LeftSurround;
+						((AudioChannelLayout*)outData)->mChannelDescriptions[4].mChannelLabel = kAudioChannelLabel_RightSurround;
+						((AudioChannelLayout*)outData)->mChannelDescriptions[5].mChannelLabel = kAudioChannelLabel_LFEScreen;
+						break;
 				}
 				*outDataSize = theACLSize;
 			}
@@ -2402,23 +1784,11 @@ static OSStatus	LoopbackAudio_GetDevicePropertyData(AudioServerPlugInDriverRef i
 			//	This property returns how many frames the HAL should expect to see between
 			//	successive sample times in the zero time stamps this device provides.
 			FailWithAction(inDataSize < sizeof(UInt32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetDevicePropertyData: not enough space for the return value of kAudioDevicePropertyZeroTimeStampPeriod for the device");
-			*((UInt32*)outData) = kDevice_RingBufferSize;
+			// as our ring-buffer only support sizes of page_length, we need to adjust the expected zero time stamp period
+			*((UInt32*)outData) = kDevice_DesiredNumFrames;
 			*outDataSize = sizeof(UInt32);
 			break;
 
-		case kAudioDevicePropertyIcon:
-			{
-				//	This is a CFURL that points to the device's Icon in the plug-in's resource bundle.
-				FailWithAction(inDataSize < sizeof(CFURLRef), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetDevicePropertyData: not enough space for the return value of kAudioDevicePropertyDeviceUID for the device");
-				CFBundleRef theBundle = CFBundleGetBundleWithIdentifier(CFSTR(kPlugIn_BundleID));
-				FailWithAction(theBundle == NULL, theAnswer = kAudioHardwareUnspecifiedError, Done, "LoopbackAudio_GetDevicePropertyData: could not get the plug-in bundle for kAudioDevicePropertyIcon");
-				CFURLRef theURL = CFBundleCopyResourceURL(theBundle, CFSTR("DeviceIcon.icns"), NULL, NULL);
-				FailWithAction(theURL == NULL, theAnswer = kAudioHardwareUnspecifiedError, Done, "LoopbackAudio_GetDevicePropertyData: could not get the URL for kAudioDevicePropertyIcon");
-				*((CFURLRef*)outData) = theURL;
-				*outDataSize = sizeof(CFURLRef);
-			}
-			break;
-			
 		default:
 			theAnswer = kAudioHardwareUnknownPropertyError;
 			break;
@@ -2434,9 +1804,7 @@ static OSStatus	LoopbackAudio_SetDevicePropertyData(AudioServerPlugInDriverRef i
 	
 	//	declare the local variables
 	OSStatus theAnswer = 0;
-	Float64 theOldSampleRate;
-	UInt64 theNewSampleRate;
-	
+
 	//	check the arguments
 	FailWithAction(inDriver != gAudioServerPlugInDriverRef, theAnswer = kAudioHardwareBadObjectError, Done, "LoopbackAudio_SetDevicePropertyData: bad driver reference");
 	FailWithAction(inAddress == NULL, theAnswer = kAudioHardwareIllegalOperationError, Done, "LoopbackAudio_SetDevicePropertyData: no address");
@@ -2453,25 +1821,37 @@ static OSStatus	LoopbackAudio_SetDevicePropertyData(AudioServerPlugInDriverRef i
 	switch(inAddress->mSelector)
 	{
 		case kAudioDevicePropertyNominalSampleRate:
+		{
 			//	Changing the sample rate needs to be handled via the
 			//	RequestConfigChange/PerformConfigChange machinery.
 
 			//	check the arguments
 			FailWithAction(inDataSize != sizeof(Float64), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_SetDevicePropertyData: wrong size for the data for kAudioDevicePropertyNominalSampleRate");
-			FailWithAction((*((const Float64*)inData) != 44100.0) && (*((const Float64*)inData) != 48000.0), theAnswer = kAudioHardwareIllegalOperationError, Done, "LoopbackAudio_SetDevicePropertyData: unsupported value for kAudioDevicePropertyNominalSampleRate");
-			
+
+			UInt32 theItemIndex;
+			for (theItemIndex = 0; theItemIndex < kNumSupportedSampleRates; theItemIndex++)
+			{
+				if (kSupportedSampleRates[theItemIndex] == *(const Float64*)inData)
+					break;
+			}
+			FailWithAction(theItemIndex == kNumSupportedSampleRates, theAnswer = kAudioHardwareIllegalOperationError, Done, "LoopbackAudio_SetDevicePropertyData: unsupported value for kAudioDevicePropertyNominalSampleRate");
+
+			AudioStreamBasicDescription theOldFormat;
 			//	make sure that the new value is different than the old value
 			pthread_mutex_lock(&gPlugIn_StateMutex);
-			theOldSampleRate = gDevice_SampleRate;
+			theOldFormat = gDevice_CurrentFormat;
 			pthread_mutex_unlock(&gPlugIn_StateMutex);
-			if(*((const Float64*)inData) != theOldSampleRate)
+			if (*((const Float64*)inData) != theOldFormat.mSampleRate)
 			{
+				AudioStreamBasicDescription *newFormat = (AudioStreamBasicDescription *)malloc(sizeof *newFormat);
+				
+				memcpy(newFormat, &theOldFormat, sizeof *newFormat);
+				newFormat->mSampleRate = *((const Float64*)inData);
 				//	we dispatch this so that the change can happen asynchronously
-				theOldSampleRate = *((const Float64*)inData);
-				theNewSampleRate = (UInt64)theOldSampleRate;
-				dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{ gPlugIn_Host->RequestDeviceConfigurationChange(gPlugIn_Host, kObjectID_Device, theNewSampleRate, NULL); });
+				dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{ gPlugIn_Host->RequestDeviceConfigurationChange(gPlugIn_Host, kObjectID_Device, kChangeRequest_StreamFormat, newFormat); });
 			}
 			break;
+		}
 		
 		default:
 			theAnswer = kAudioHardwareUnknownPropertyError;
@@ -2516,7 +1896,7 @@ static Boolean	LoopbackAudio_HasStreamProperty(AudioServerPlugInDriverRef inDriv
 		case kAudioStreamPropertyPhysicalFormat:
 		case kAudioStreamPropertyAvailableVirtualFormats:
 		case kAudioStreamPropertyAvailablePhysicalFormats:
-			theAnswer = true;
+			theAnswer = (inAddress->mScope == kAudioObjectPropertyScopeGlobal) && (inAddress->mElement == kAudioObjectPropertyElementMaster);
 			break;
 	};
 
@@ -2636,7 +2016,7 @@ static OSStatus	LoopbackAudio_GetStreamPropertyDataSize(AudioServerPlugInDriverR
 
 		case kAudioStreamPropertyAvailableVirtualFormats:
 		case kAudioStreamPropertyAvailablePhysicalFormats:
-			*outDataSize = 2 * sizeof(AudioStreamRangedDescription);
+			*outDataSize = kMaxSupportedChannels * kNumSupportedSampleRates * sizeof(AudioStreamRangedDescription);
 			break;
 
 		default:
@@ -2720,6 +2100,7 @@ static OSStatus	LoopbackAudio_GetStreamPropertyData(AudioServerPlugInDriverRef i
 			//	are defined in <CoreAudio/AudioHardwareBase.h>
 			FailWithAction(inDataSize < sizeof(UInt32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetStreamPropertyData: not enough space for the return value of kAudioStreamPropertyTerminalType for the stream");
 			*((UInt32*)outData) = (inObjectID == kObjectID_Stream_Input) ? kAudioStreamTerminalTypeMicrophone : kAudioStreamTerminalTypeSpeaker;
+//			*((UInt32*)outData) = (inObjectID == kObjectID_Stream_Input) ? kAudioStreamTerminalTypeDigitalAudioInterface : kAudioStreamTerminalTypeDigitalAudioInterface;
 			*outDataSize = sizeof(UInt32);
 			break;
 
@@ -2727,7 +2108,7 @@ static OSStatus	LoopbackAudio_GetStreamPropertyData(AudioServerPlugInDriverRef i
 			//	This property returns the absolute channel number for the first channel in
 			//	the stream. For exmaple, if a device has two output streams with two
 			//	channels each, then the starting channel number for the first stream is 1
-			//	and ths starting channel number fo the second stream is 3.
+			//	and the starting channel number fo the second stream is 3.
 			FailWithAction(inDataSize < sizeof(UInt32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetStreamPropertyData: not enough space for the return value of kAudioStreamPropertyStartingChannel for the stream");
 			*((UInt32*)outData) = 1;
 			*outDataSize = sizeof(UInt32);
@@ -2749,14 +2130,7 @@ static OSStatus	LoopbackAudio_GetStreamPropertyData(AudioServerPlugInDriverRef i
 			//	format has to be the same as the physical format.
 			FailWithAction(inDataSize < sizeof(AudioStreamBasicDescription), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetStreamPropertyData: not enough space for the return value of kAudioStreamPropertyVirtualFormat for the stream");
 			pthread_mutex_lock(&gPlugIn_StateMutex);
-			((AudioStreamBasicDescription*)outData)->mSampleRate = gDevice_SampleRate;
-			((AudioStreamBasicDescription*)outData)->mFormatID = kAudioFormatLinearPCM;
-			((AudioStreamBasicDescription*)outData)->mFormatFlags = kAudioFormatFlagIsFloat | kAudioFormatFlagsNativeEndian | kAudioFormatFlagIsPacked;
-			((AudioStreamBasicDescription*)outData)->mBytesPerPacket = 8;
-			((AudioStreamBasicDescription*)outData)->mFramesPerPacket = 1;
-			((AudioStreamBasicDescription*)outData)->mBytesPerFrame = 8;
-			((AudioStreamBasicDescription*)outData)->mChannelsPerFrame = 2;
-			((AudioStreamBasicDescription*)outData)->mBitsPerChannel = 32;
+			memcpy(outData, &gDevice_CurrentFormat, sizeof (AudioStreamBasicDescription));
 			pthread_mutex_unlock(&gPlugIn_StateMutex);
 			*outDataSize = sizeof(AudioStreamBasicDescription);
 			break;
@@ -2772,39 +2146,29 @@ static OSStatus	LoopbackAudio_GetStreamPropertyData(AudioServerPlugInDriverRef i
 			theNumberItemsToFetch = inDataSize / sizeof(AudioStreamRangedDescription);
 			
 			//	clamp it to the number of items we have
-			if(theNumberItemsToFetch > 2)
+			if(theNumberItemsToFetch > kNumSupportedSampleRates * kMaxSupportedChannels)
 			{
-				theNumberItemsToFetch = 2;
+				theNumberItemsToFetch = kNumSupportedSampleRates * kMaxSupportedChannels;
 			}
 			
 			//	fill out the return array
-			if(theNumberItemsToFetch > 0)
+			for (unsigned i = 0; i < theNumberItemsToFetch; i++)
 			{
-				((AudioStreamRangedDescription*)outData)[0].mFormat.mSampleRate = 44100.0;
-				((AudioStreamRangedDescription*)outData)[0].mFormat.mFormatID = kAudioFormatLinearPCM;
-				((AudioStreamRangedDescription*)outData)[0].mFormat.mFormatFlags = kAudioFormatFlagIsFloat | kAudioFormatFlagsNativeEndian | kAudioFormatFlagIsPacked;
-				((AudioStreamRangedDescription*)outData)[0].mFormat.mBytesPerPacket = 8;
-				((AudioStreamRangedDescription*)outData)[0].mFormat.mFramesPerPacket = 1;
-				((AudioStreamRangedDescription*)outData)[0].mFormat.mBytesPerFrame = 8;
-				((AudioStreamRangedDescription*)outData)[0].mFormat.mChannelsPerFrame = 2;
-				((AudioStreamRangedDescription*)outData)[0].mFormat.mBitsPerChannel = 32;
-				((AudioStreamRangedDescription*)outData)[0].mSampleRateRange.mMinimum = 44100.0;
-				((AudioStreamRangedDescription*)outData)[0].mSampleRateRange.mMaximum = 44100.0;
+				const unsigned numChannels = (i / kNumSupportedSampleRates) + 1;
+				const unsigned sampleRateIndex = i % kNumSupportedSampleRates;
+				
+				((AudioStreamRangedDescription *)outData)[i].mFormat.mSampleRate = kSupportedSampleRates[sampleRateIndex];
+				((AudioStreamRangedDescription *)outData)[i].mFormat.mFormatID = kAudioFormatLinearPCM;
+				((AudioStreamRangedDescription *)outData)[i].mFormat.mFormatFlags = kAudioFormatFlagsNativeFloatPacked;
+				((AudioStreamRangedDescription *)outData)[i].mFormat.mBitsPerChannel = sizeof(float) * 8;
+				((AudioStreamRangedDescription *)outData)[i].mFormat.mChannelsPerFrame = numChannels;
+				((AudioStreamRangedDescription *)outData)[i].mFormat.mBytesPerFrame = numChannels * sizeof(float);
+				((AudioStreamRangedDescription *)outData)[i].mFormat.mFramesPerPacket = 1;
+				((AudioStreamRangedDescription *)outData)[i].mFormat.mBytesPerPacket = numChannels * sizeof(float);
+				((AudioStreamRangedDescription *)outData)[i].mSampleRateRange.mMinimum = kSupportedSampleRates[sampleRateIndex];
+				((AudioStreamRangedDescription *)outData)[i].mSampleRateRange.mMaximum = kSupportedSampleRates[sampleRateIndex];
 			}
-			if(theNumberItemsToFetch > 1)
-			{
-				((AudioStreamRangedDescription*)outData)[1].mFormat.mSampleRate = 48000.0;
-				((AudioStreamRangedDescription*)outData)[1].mFormat.mFormatID = kAudioFormatLinearPCM;
-				((AudioStreamRangedDescription*)outData)[1].mFormat.mFormatFlags = kAudioFormatFlagIsFloat | kAudioFormatFlagsNativeEndian | kAudioFormatFlagIsPacked;
-				((AudioStreamRangedDescription*)outData)[1].mFormat.mBytesPerPacket = 8;
-				((AudioStreamRangedDescription*)outData)[1].mFormat.mFramesPerPacket = 1;
-				((AudioStreamRangedDescription*)outData)[1].mFormat.mBytesPerFrame = 8;
-				((AudioStreamRangedDescription*)outData)[1].mFormat.mChannelsPerFrame = 2;
-				((AudioStreamRangedDescription*)outData)[1].mFormat.mBitsPerChannel = 32;
-				((AudioStreamRangedDescription*)outData)[1].mSampleRateRange.mMinimum = 48000.0;
-				((AudioStreamRangedDescription*)outData)[1].mSampleRateRange.mMaximum = 48000.0;
-			}
-			
+
 			//	report how much we wrote
 			*outDataSize = theNumberItemsToFetch * sizeof(AudioStreamRangedDescription);
 			break;
@@ -2824,9 +2188,7 @@ static OSStatus	LoopbackAudio_SetStreamPropertyData(AudioServerPlugInDriverRef i
 	
 	//	declare the local variables
 	OSStatus theAnswer = 0;
-	Float64 theOldSampleRate;
-	UInt64 theNewSampleRate;
-	
+
 	//	check the arguments
 	FailWithAction(inDriver != gAudioServerPlugInDriverRef, theAnswer = kAudioHardwareBadObjectError, Done, "LoopbackAudio_SetStreamPropertyData: bad driver reference");
 	FailWithAction(inAddress == NULL, theAnswer = kAudioHardwareIllegalOperationError, Done, "LoopbackAudio_SetStreamPropertyData: no address");
@@ -2874,32 +2236,44 @@ static OSStatus	LoopbackAudio_SetStreamPropertyData(AudioServerPlugInDriverRef i
 			
 		case kAudioStreamPropertyVirtualFormat:
 		case kAudioStreamPropertyPhysicalFormat:
+		{
 			//	Changing the stream format needs to be handled via the
-			//	RequestConfigChange/PerformConfigChange machinery. Note that because this
-			//	device only supports 2 channel 32 bit float data, the only thing that can
-			//	change is the sample rate.
-			FailWithAction(inDataSize != sizeof(AudioStreamBasicDescription), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_SetStreamPropertyData: wrong size for the data for kAudioStreamPropertyPhysicalFormat");
-			FailWithAction(((const AudioStreamBasicDescription*)inData)->mFormatID != kAudioFormatLinearPCM, theAnswer = kAudioDeviceUnsupportedFormatError, Done, "LoopbackAudio_SetStreamPropertyData: unsupported format ID for kAudioStreamPropertyPhysicalFormat");
-			FailWithAction(((const AudioStreamBasicDescription*)inData)->mFormatFlags != (kAudioFormatFlagIsFloat | kAudioFormatFlagsNativeEndian | kAudioFormatFlagIsPacked), theAnswer = kAudioDeviceUnsupportedFormatError, Done, "LoopbackAudio_SetStreamPropertyData: unsupported format flags for kAudioStreamPropertyPhysicalFormat");
-			FailWithAction(((const AudioStreamBasicDescription*)inData)->mBytesPerPacket != 8, theAnswer = kAudioDeviceUnsupportedFormatError, Done, "LoopbackAudio_SetStreamPropertyData: unsupported bytes per packet for kAudioStreamPropertyPhysicalFormat");
-			FailWithAction(((const AudioStreamBasicDescription*)inData)->mFramesPerPacket != 1, theAnswer = kAudioDeviceUnsupportedFormatError, Done, "LoopbackAudio_SetStreamPropertyData: unsupported frames per packet for kAudioStreamPropertyPhysicalFormat");
-			FailWithAction(((const AudioStreamBasicDescription*)inData)->mBytesPerFrame != 8, theAnswer = kAudioDeviceUnsupportedFormatError, Done, "LoopbackAudio_SetStreamPropertyData: unsupported bytes per frame for kAudioStreamPropertyPhysicalFormat");
-			FailWithAction(((const AudioStreamBasicDescription*)inData)->mChannelsPerFrame != 2, theAnswer = kAudioDeviceUnsupportedFormatError, Done, "LoopbackAudio_SetStreamPropertyData: unsupported channels per frame for kAudioStreamPropertyPhysicalFormat");
-			FailWithAction(((const AudioStreamBasicDescription*)inData)->mBitsPerChannel != 32, theAnswer = kAudioDeviceUnsupportedFormatError, Done, "LoopbackAudio_SetStreamPropertyData: unsupported bits per channel for kAudioStreamPropertyPhysicalFormat");
-			FailWithAction((((const AudioStreamBasicDescription*)inData)->mSampleRate != 44100.0) && (((const AudioStreamBasicDescription*)inData)->mSampleRate != 48000.0), theAnswer = kAudioHardwareIllegalOperationError, Done, "LoopbackAudio_SetStreamPropertyData: unsupported sample rate for kAudioStreamPropertyPhysicalFormat");
+			//	RequestConfigChange/PerformConfigChange machinery.
+			AudioStreamBasicDescription currentAudioFormat;
+			const AudioStreamBasicDescription *newAudioFormat = (const AudioStreamBasicDescription*)inData;
+			unsigned i;
 			
+			FailWithAction(inDataSize != sizeof(AudioStreamBasicDescription), theAnswer = kAudioHardwareBadPropertySizeError, Done, "Loopback_SetStreamPropertyData: wrong size for the data for kAudioStreamPropertyPhysicalFormat");
+			FailWithAction(newAudioFormat->mFormatID != kAudioFormatLinearPCM, theAnswer = kAudioDeviceUnsupportedFormatError, Done, "Loopback_SetStreamPropertyData: unsupported format ID for kAudioStreamPropertyPhysicalFormat");
+			FailWithAction(newAudioFormat->mFormatFlags != kAudioFormatFlagsNativeFloatPacked, theAnswer = kAudioDeviceUnsupportedFormatError, Done, "Loopback_SetStreamPropertyData: unsupported format flags for kAudioStreamPropertyPhysicalFormat");
+			FailWithAction(newAudioFormat->mBitsPerChannel != sizeof(float) * 8, theAnswer = kAudioDeviceUnsupportedFormatError, Done, "Loopback_SetStreamPropertyData: unsupported bits per channel for kAudioStreamPropertyPhysicalFormat");
+			FailWithAction(newAudioFormat->mBytesPerPacket != sizeof(float) * newAudioFormat->mChannelsPerFrame, theAnswer = kAudioDeviceUnsupportedFormatError, Done, "Loopback_SetStreamPropertyData: unsupported bytes per packet for kAudioStreamPropertyPhysicalFormat");
+			FailWithAction(newAudioFormat->mFramesPerPacket != 1, theAnswer = kAudioDeviceUnsupportedFormatError, Done, "Loopback_SetStreamPropertyData: unsupported frames per packet for kAudioStreamPropertyPhysicalFormat");
+			FailWithAction(newAudioFormat->mBytesPerFrame != newAudioFormat->mFramesPerPacket * newAudioFormat->mBytesPerPacket, theAnswer = kAudioDeviceUnsupportedFormatError, Done, "Loopback_SetStreamPropertyData: unsupported bytes per frame for kAudioStreamPropertyPhysicalFormat");
+			FailWithAction(newAudioFormat->mChannelsPerFrame < 1 || newAudioFormat->mChannelsPerFrame > kMaxSupportedChannels, theAnswer = kAudioDeviceUnsupportedFormatError, Done, "Loopback_SetStreamPropertyData: unsupported channels per frame for kAudioStreamPropertyPhysicalFormat");
+			for (i = 0; i < kNumSupportedSampleRates; i++)
+				if (newAudioFormat->mSampleRate == kSupportedSampleRates[i])
+					break;
+			FailWithAction(i == kNumSupportedSampleRates, theAnswer = kAudioHardwareIllegalOperationError, Done, "Loopback_SetStreamPropertyData: unsupported sample rate for kAudioStreamPropertyPhysicalFormat");
+
 			//	If we made it this far, the requested format is something we support, so make sure the sample rate is actually different
 			pthread_mutex_lock(&gPlugIn_StateMutex);
-			theOldSampleRate = gDevice_SampleRate;
+			currentAudioFormat = gDevice_CurrentFormat;
 			pthread_mutex_unlock(&gPlugIn_StateMutex);
-			if(((const AudioStreamBasicDescription*)inData)->mSampleRate != theOldSampleRate)
+
+			if(memcmp(newAudioFormat, &currentAudioFormat, sizeof *newAudioFormat) != 0)
 			{
 				//	we dispatch this so that the change can happen asynchronously
-				theOldSampleRate = ((const AudioStreamBasicDescription*)inData)->mSampleRate;
-				theNewSampleRate = (UInt64)theOldSampleRate;
-				dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{ gPlugIn_Host->RequestDeviceConfigurationChange(gPlugIn_Host, kObjectID_Device, theNewSampleRate, NULL); });
+				AudioStreamBasicDescription *newDescAlloced = (AudioStreamBasicDescription *)malloc(sizeof *newAudioFormat);
+				memcpy(newDescAlloced, newAudioFormat, sizeof *newAudioFormat);
+				dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{ gPlugIn_Host->RequestDeviceConfigurationChange(gPlugIn_Host, kObjectID_Device, kChangeRequest_StreamFormat, newDescAlloced); });
 			}
+			*outNumberPropertiesChanged = 1;
+			outChangedAddresses[0].mSelector = kAudioDevicePropertyPreferredChannelLayout;
+			outChangedAddresses[0].mScope = kAudioObjectPropertyScopeOutput;
+			outChangedAddresses[0].mElement = kAudioObjectPropertyElementMaster;
 			break;
+		}
 		
 		default:
 			theAnswer = kAudioHardwareUnknownPropertyError;
@@ -2930,27 +2304,6 @@ static Boolean	LoopbackAudio_HasControlProperty(AudioServerPlugInDriverRef inDri
 	//	property in the LoopbackAudio_GetControlPropertyData() method.
 	switch(inObjectID)
 	{
-		case kObjectID_Volume_Input_Master:
-		case kObjectID_Volume_Output_Master:
-			switch(inAddress->mSelector)
-			{
-				case kAudioObjectPropertyBaseClass:
-				case kAudioObjectPropertyClass:
-				case kAudioObjectPropertyOwner:
-				case kAudioObjectPropertyOwnedObjects:
-				case kAudioControlPropertyScope:
-				case kAudioControlPropertyElement:
-				case kAudioLevelControlPropertyScalarValue:
-				case kAudioLevelControlPropertyDecibelValue:
-				case kAudioLevelControlPropertyDecibelRange:
-				case kAudioLevelControlPropertyConvertScalarToDecibels:
-				case kAudioLevelControlPropertyConvertDecibelsToScalar:
-					theAnswer = true;
-					break;
-			};
-			break;
-		
-		case kObjectID_Mute_Input_Master:
 		case kObjectID_Mute_Output_Master:
 			switch(inAddress->mSelector)
 			{
@@ -2961,25 +2314,7 @@ static Boolean	LoopbackAudio_HasControlProperty(AudioServerPlugInDriverRef inDri
 				case kAudioControlPropertyScope:
 				case kAudioControlPropertyElement:
 				case kAudioBooleanControlPropertyValue:
-					theAnswer = true;
-					break;
-			};
-			break;
-		
-		case kObjectID_DataSource_Input_Master:
-		case kObjectID_DataSource_Output_Master:
-			switch(inAddress->mSelector)
-			{
-				case kAudioObjectPropertyBaseClass:
-				case kAudioObjectPropertyClass:
-				case kAudioObjectPropertyOwner:
-				case kAudioObjectPropertyOwnedObjects:
-				case kAudioControlPropertyScope:
-				case kAudioControlPropertyElement:
-				case kAudioSelectorControlPropertyCurrentItem:
-				case kAudioSelectorControlPropertyAvailableItems:
-				case kAudioSelectorControlPropertyItemName:
-					theAnswer = true;
+					theAnswer = (inAddress->mScope == kAudioObjectPropertyScopeGlobal) && (inAddress->mElement == kAudioObjectPropertyElementMaster);
 					break;
 			};
 			break;
@@ -3009,34 +2344,6 @@ static OSStatus	LoopbackAudio_IsControlPropertySettable(AudioServerPlugInDriverR
 	//	property in the LoopbackAudio_GetControlPropertyData() method.
 	switch(inObjectID)
 	{
-		case kObjectID_Volume_Input_Master:
-		case kObjectID_Volume_Output_Master:
-			switch(inAddress->mSelector)
-			{
-				case kAudioObjectPropertyBaseClass:
-				case kAudioObjectPropertyClass:
-				case kAudioObjectPropertyOwner:
-				case kAudioObjectPropertyOwnedObjects:
-				case kAudioControlPropertyScope:
-				case kAudioControlPropertyElement:
-				case kAudioLevelControlPropertyDecibelRange:
-				case kAudioLevelControlPropertyConvertScalarToDecibels:
-				case kAudioLevelControlPropertyConvertDecibelsToScalar:
-					*outIsSettable = false;
-					break;
-				
-				case kAudioLevelControlPropertyScalarValue:
-				case kAudioLevelControlPropertyDecibelValue:
-					*outIsSettable = true;
-					break;
-				
-				default:
-					theAnswer = kAudioHardwareUnknownPropertyError;
-					break;
-			};
-			break;
-		
-		case kObjectID_Mute_Input_Master:
 		case kObjectID_Mute_Output_Master:
 			switch(inAddress->mSelector)
 			{
@@ -3059,31 +2366,6 @@ static OSStatus	LoopbackAudio_IsControlPropertySettable(AudioServerPlugInDriverR
 			};
 			break;
 		
-		case kObjectID_DataSource_Input_Master:
-		case kObjectID_DataSource_Output_Master:
-			switch(inAddress->mSelector)
-			{
-				case kAudioObjectPropertyBaseClass:
-				case kAudioObjectPropertyClass:
-				case kAudioObjectPropertyOwner:
-				case kAudioObjectPropertyOwnedObjects:
-				case kAudioControlPropertyScope:
-				case kAudioControlPropertyElement:
-				case kAudioSelectorControlPropertyAvailableItems:
-				case kAudioSelectorControlPropertyItemName:
-					*outIsSettable = false;
-					break;
-				
-				case kAudioSelectorControlPropertyCurrentItem:
-					*outIsSettable = true;
-					break;
-				
-				default:
-					theAnswer = kAudioHardwareUnknownPropertyError;
-					break;
-			};
-			break;
-				
 		default:
 			theAnswer = kAudioHardwareBadObjectError;
 			break;
@@ -3112,61 +2394,6 @@ static OSStatus	LoopbackAudio_GetControlPropertyDataSize(AudioServerPlugInDriver
 	//	property in the LoopbackAudio_GetControlPropertyData() method.
 	switch(inObjectID)
 	{
-		case kObjectID_Volume_Input_Master:
-		case kObjectID_Volume_Output_Master:
-			switch(inAddress->mSelector)
-			{
-				case kAudioObjectPropertyBaseClass:
-					*outDataSize = sizeof(AudioClassID);
-					break;
-
-				case kAudioObjectPropertyClass:
-					*outDataSize = sizeof(AudioClassID);
-					break;
-
-				case kAudioObjectPropertyOwner:
-					*outDataSize = sizeof(AudioObjectID);
-					break;
-
-				case kAudioObjectPropertyOwnedObjects:
-					*outDataSize = 0 * sizeof(AudioObjectID);
-					break;
-
-				case kAudioControlPropertyScope:
-					*outDataSize = sizeof(AudioObjectPropertyScope);
-					break;
-
-				case kAudioControlPropertyElement:
-					*outDataSize = sizeof(AudioObjectPropertyElement);
-					break;
-
-				case kAudioLevelControlPropertyScalarValue:
-					*outDataSize = sizeof(Float32);
-					break;
-
-				case kAudioLevelControlPropertyDecibelValue:
-					*outDataSize = sizeof(Float32);
-					break;
-
-				case kAudioLevelControlPropertyDecibelRange:
-					*outDataSize = sizeof(AudioValueRange);
-					break;
-
-				case kAudioLevelControlPropertyConvertScalarToDecibels:
-					*outDataSize = sizeof(Float32);
-					break;
-
-				case kAudioLevelControlPropertyConvertDecibelsToScalar:
-					*outDataSize = sizeof(Float32);
-					break;
-
-				default:
-					theAnswer = kAudioHardwareUnknownPropertyError;
-					break;
-			};
-			break;
-		
-		case kObjectID_Mute_Input_Master:
 		case kObjectID_Mute_Output_Master:
 			switch(inAddress->mSelector)
 			{
@@ -3204,52 +2431,6 @@ static OSStatus	LoopbackAudio_GetControlPropertyDataSize(AudioServerPlugInDriver
 			};
 			break;
 		
-		case kObjectID_DataSource_Input_Master:
-		case kObjectID_DataSource_Output_Master:
-			switch(inAddress->mSelector)
-			{
-				case kAudioObjectPropertyBaseClass:
-					*outDataSize = sizeof(AudioClassID);
-					break;
-
-				case kAudioObjectPropertyClass:
-					*outDataSize = sizeof(AudioClassID);
-					break;
-
-				case kAudioObjectPropertyOwner:
-					*outDataSize = sizeof(AudioObjectID);
-					break;
-
-				case kAudioObjectPropertyOwnedObjects:
-					*outDataSize = 0 * sizeof(AudioObjectID);
-					break;
-
-				case kAudioControlPropertyScope:
-					*outDataSize = sizeof(AudioObjectPropertyScope);
-					break;
-
-				case kAudioControlPropertyElement:
-					*outDataSize = sizeof(AudioObjectPropertyElement);
-					break;
-
-				case kAudioSelectorControlPropertyCurrentItem:
-					*outDataSize = sizeof(UInt32);
-					break;
-
-				case kAudioSelectorControlPropertyAvailableItems:
-					*outDataSize = kDataSource_NumberItems * sizeof(UInt32);
-					break;
-
-				case kAudioSelectorControlPropertyItemName:
-					*outDataSize = sizeof(CFStringRef);
-					break;
-
-				default:
-					theAnswer = kAudioHardwareUnknownPropertyError;
-					break;
-			};
-			break;
-				
 		default:
 			theAnswer = kAudioHardwareBadObjectError;
 			break;
@@ -3265,9 +2446,7 @@ static OSStatus	LoopbackAudio_GetControlPropertyData(AudioServerPlugInDriverRef 
 	
 	//	declare the local variables
 	OSStatus theAnswer = 0;
-	UInt32 theNumberItemsToFetch;
-	UInt32 theItemIndex;
-	
+
 	//	check the arguments
 	FailWithAction(inDriver != gAudioServerPlugInDriverRef, theAnswer = kAudioHardwareBadObjectError, Done, "LoopbackAudio_GetControlPropertyData: bad driver reference");
 	FailWithAction(inAddress == NULL, theAnswer = kAudioHardwareIllegalOperationError, Done, "LoopbackAudio_GetControlPropertyData: no address");
@@ -3281,139 +2460,6 @@ static OSStatus	LoopbackAudio_GetControlPropertyData(AudioServerPlugInDriverRef 
 	//	it is necessary to lock the state mutex.
 	switch(inObjectID)
 	{
-		case kObjectID_Volume_Input_Master:
-		case kObjectID_Volume_Output_Master:
-			switch(inAddress->mSelector)
-			{
-				case kAudioObjectPropertyBaseClass:
-					//	The base class for kAudioVolumeControlClassID is kAudioLevelControlClassID
-					FailWithAction(inDataSize < sizeof(AudioClassID), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetControlPropertyData: not enough space for the return value of kAudioObjectPropertyBaseClass for the volume control");
-					*((AudioClassID*)outData) = kAudioLevelControlClassID;
-					*outDataSize = sizeof(AudioClassID);
-					break;
-					
-				case kAudioObjectPropertyClass:
-					//	Volume controls are of the class, kAudioVolumeControlClassID
-					FailWithAction(inDataSize < sizeof(AudioClassID), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetControlPropertyData: not enough space for the return value of kAudioObjectPropertyClass for the volume control");
-					*((AudioClassID*)outData) = kAudioVolumeControlClassID;
-					*outDataSize = sizeof(AudioClassID);
-					break;
-					
-				case kAudioObjectPropertyOwner:
-					//	The control's owner is the device object
-					FailWithAction(inDataSize < sizeof(AudioObjectID), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetControlPropertyData: not enough space for the return value of kAudioObjectPropertyOwner for the volume control");
-					*((AudioObjectID*)outData) = kObjectID_Device;
-					*outDataSize = sizeof(AudioObjectID);
-					break;
-					
-				case kAudioObjectPropertyOwnedObjects:
-					//	Controls do not own any objects
-					*outDataSize = 0 * sizeof(AudioObjectID);
-					break;
-
-				case kAudioControlPropertyScope:
-					//	This property returns the scope that the control is attached to.
-					FailWithAction(inDataSize < sizeof(AudioObjectPropertyScope), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetControlPropertyData: not enough space for the return value of kAudioControlPropertyScope for the volume control");
-					*((AudioObjectPropertyScope*)outData) = (inObjectID == kObjectID_Volume_Input_Master) ? kAudioObjectPropertyScopeInput : kAudioObjectPropertyScopeOutput;
-					*outDataSize = sizeof(AudioObjectPropertyScope);
-					break;
-
-				case kAudioControlPropertyElement:
-					//	This property returns the element that the control is attached to.
-					FailWithAction(inDataSize < sizeof(AudioObjectPropertyElement), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetControlPropertyData: not enough space for the return value of kAudioControlPropertyElement for the volume control");
-					*((AudioObjectPropertyElement*)outData) = kAudioObjectPropertyElementMaster;
-					*outDataSize = sizeof(AudioObjectPropertyElement);
-					break;
-
-				case kAudioLevelControlPropertyScalarValue:
-					//	This returns the value of the control in the normalized range of 0 to 1.
-					//	Note that we need to take the state lock to examine the value.
-					FailWithAction(inDataSize < sizeof(Float32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetControlPropertyData: not enough space for the return value of kAudioLevelControlPropertyScalarValue for the volume control");
-					pthread_mutex_lock(&gPlugIn_StateMutex);
-					*((Float32*)outData) = (inObjectID == kObjectID_Volume_Input_Master) ? gVolume_Input_Master_Value : gVolume_Output_Master_Value;
-					pthread_mutex_unlock(&gPlugIn_StateMutex);
-					*outDataSize = sizeof(Float32);
-					break;
-
-				case kAudioLevelControlPropertyDecibelValue:
-					//	This returns the dB value of the control.
-					//	Note that we need to take the state lock to examine the value.
-					FailWithAction(inDataSize < sizeof(Float32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetControlPropertyData: not enough space for the return value of kAudioLevelControlPropertyDecibelValue for the volume control");
-					pthread_mutex_lock(&gPlugIn_StateMutex);
-					*((Float32*)outData) = (inObjectID == kObjectID_Volume_Input_Master) ? gVolume_Input_Master_Value : gVolume_Output_Master_Value;
-					pthread_mutex_unlock(&gPlugIn_StateMutex);
-					
-					//	Note that we square the scalar value before converting to dB so as to
-					//	provide a better curve for the slider
-					*((Float32*)outData) *= *((Float32*)outData);
-					*((Float32*)outData) = kVolume_MinDB + (*((Float32*)outData) * (kVolume_MaxDB - kVolume_MinDB));
-					
-					//	report how much we wrote
-					*outDataSize = sizeof(Float32);
-					break;
-
-				case kAudioLevelControlPropertyDecibelRange:
-					//	This returns the dB range of the control.
-					FailWithAction(inDataSize < sizeof(AudioValueRange), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetControlPropertyData: not enough space for the return value of kAudioLevelControlPropertyDecibelRange for the volume control");
-					((AudioValueRange*)outData)->mMinimum = kVolume_MinDB;
-					((AudioValueRange*)outData)->mMaximum = kVolume_MaxDB;
-					*outDataSize = sizeof(AudioValueRange);
-					break;
-
-				case kAudioLevelControlPropertyConvertScalarToDecibels:
-					//	This takes the scalar value in outData and converts it to dB.
-					FailWithAction(inDataSize < sizeof(Float32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetControlPropertyData: not enough space for the return value of kAudioLevelControlPropertyDecibelValue for the volume control");
-					
-					//	clamp the value to be between 0 and 1
-					if(*((Float32*)outData) < 0.0)
-					{
-						*((Float32*)outData) = 0;
-					}
-					if(*((Float32*)outData) > 1.0)
-					{
-						*((Float32*)outData) = 1.0;
-					}
-					
-					//	Note that we square the scalar value before converting to dB so as to
-					//	provide a better curve for the slider
-					*((Float32*)outData) *= *((Float32*)outData);
-					*((Float32*)outData) = kVolume_MinDB + (*((Float32*)outData) * (kVolume_MaxDB - kVolume_MinDB));
-					
-					//	report how much we wrote
-					*outDataSize = sizeof(Float32);
-					break;
-
-				case kAudioLevelControlPropertyConvertDecibelsToScalar:
-					//	This takes the dB value in outData and converts it to scalar.
-					FailWithAction(inDataSize < sizeof(Float32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetControlPropertyData: not enough space for the return value of kAudioLevelControlPropertyDecibelValue for the volume control");
-					
-					//	clamp the value to be between kVolume_MinDB and kVolume_MaxDB
-					if(*((Float32*)outData) < kVolume_MinDB)
-					{
-						*((Float32*)outData) = kVolume_MinDB;
-					}
-					if(*((Float32*)outData) > kVolume_MaxDB)
-					{
-						*((Float32*)outData) = kVolume_MaxDB;
-					}
-					
-					//	Note that we square the scalar value before converting to dB so as to
-					//	provide a better curve for the slider. We undo that here.
-					*((Float32*)outData) = *((Float32*)outData) - kVolume_MinDB;
-					*((Float32*)outData) /= kVolume_MaxDB - kVolume_MinDB;
-					*((Float32*)outData) = sqrtf(*((Float32*)outData));
-					
-					//	report how much we wrote
-					*outDataSize = sizeof(Float32);
-					break;
-
-				default:
-					theAnswer = kAudioHardwareUnknownPropertyError;
-					break;
-			};
-			break;
-		
-		case kObjectID_Mute_Input_Master:
 		case kObjectID_Mute_Output_Master:
 			switch(inAddress->mSelector)
 			{
@@ -3446,7 +2492,7 @@ static OSStatus	LoopbackAudio_GetControlPropertyData(AudioServerPlugInDriverRef 
 				case kAudioControlPropertyScope:
 					//	This property returns the scope that the control is attached to.
 					FailWithAction(inDataSize < sizeof(AudioObjectPropertyScope), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetControlPropertyData: not enough space for the return value of kAudioControlPropertyScope for the mute control");
-					*((AudioObjectPropertyScope*)outData) = (inObjectID == kObjectID_Mute_Input_Master) ? kAudioObjectPropertyScopeInput : kAudioObjectPropertyScopeOutput;
+					*((AudioObjectPropertyScope*)outData) = kAudioObjectPropertyScopeOutput;
 					*outDataSize = sizeof(AudioObjectPropertyScope);
 					break;
 
@@ -3463,7 +2509,7 @@ static OSStatus	LoopbackAudio_GetControlPropertyData(AudioServerPlugInDriverRef 
 					//	Note that we need to take the state lock to examine this value.
 					FailWithAction(inDataSize < sizeof(UInt32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetControlPropertyData: not enough space for the return value of kAudioBooleanControlPropertyValue for the mute control");
 					pthread_mutex_lock(&gPlugIn_StateMutex);
-					*((UInt32*)outData) = (inObjectID == kObjectID_Mute_Input_Master) ? (gMute_Input_Master_Value ? 1 : 0) : (gMute_Output_Master_Value ? 1 : 0);
+					*((UInt32*)outData) = gMute_Output_Master_Value ? 1 : 0;
 					pthread_mutex_unlock(&gPlugIn_StateMutex);
 					*outDataSize = sizeof(UInt32);
 					break;
@@ -3474,99 +2520,6 @@ static OSStatus	LoopbackAudio_GetControlPropertyData(AudioServerPlugInDriverRef 
 			};
 			break;
 		
-		case kObjectID_DataSource_Input_Master:
-		case kObjectID_DataSource_Output_Master:
-			switch(inAddress->mSelector)
-			{
-				case kAudioObjectPropertyBaseClass:
-					//	The base class for kAudioDataSourceControlClassID is kAudioSelectorControlClassID
-					FailWithAction(inDataSize < sizeof(AudioClassID), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetControlPropertyData: not enough space for the return value of kAudioObjectPropertyBaseClass for the data source control");
-					*((AudioClassID*)outData) = kAudioSelectorControlClassID;
-					*outDataSize = sizeof(AudioClassID);
-					break;
-					
-				case kAudioObjectPropertyClass:
-					//	Data Source controls are of the class, kAudioDataSourceControlClassID
-					FailWithAction(inDataSize < sizeof(AudioClassID), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetControlPropertyData: not enough space for the return value of kAudioObjectPropertyClass for the data source control");
-					*((AudioClassID*)outData) = kAudioDataSourceControlClassID;
-					*outDataSize = sizeof(AudioClassID);
-					break;
-					
-				case kAudioObjectPropertyOwner:
-					//	The control's owner is the device object
-					FailWithAction(inDataSize < sizeof(AudioObjectID), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetControlPropertyData: not enough space for the return value of kAudioObjectPropertyOwner for the data source control");
-					*((AudioObjectID*)outData) = kObjectID_Device;
-					*outDataSize = sizeof(AudioObjectID);
-					break;
-					
-				case kAudioObjectPropertyOwnedObjects:
-					//	Controls do not own any objects
-					*outDataSize = 0 * sizeof(AudioObjectID);
-					break;
-
-				case kAudioControlPropertyScope:
-					//	This property returns the scope that the control is attached to.
-					FailWithAction(inDataSize < sizeof(AudioObjectPropertyScope), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetControlPropertyData: not enough space for the return value of kAudioControlPropertyScope for the data source control");
-					*((AudioObjectPropertyScope*)outData) = (inObjectID == kObjectID_DataSource_Input_Master) ? kAudioObjectPropertyScopeInput : kAudioObjectPropertyScopeOutput;
-					*outDataSize = sizeof(AudioObjectPropertyScope);
-					break;
-
-				case kAudioControlPropertyElement:
-					//	This property returns the element that the control is attached to.
-					FailWithAction(inDataSize < sizeof(AudioObjectPropertyElement), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetControlPropertyData: not enough space for the return value of kAudioControlPropertyElement for the data source control");
-					*((AudioObjectPropertyElement*)outData) = kAudioObjectPropertyElementMaster;
-					*outDataSize = sizeof(AudioObjectPropertyElement);
-					break;
-
-				case kAudioSelectorControlPropertyCurrentItem:
-					//	This returns the value of the data source selector.
-					//	Note that we need to take the state lock to examine this value.
-					FailWithAction(inDataSize < sizeof(UInt32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetControlPropertyData: not enough space for the return value of kAudioSelectorControlPropertyCurrentItem for the data source control");
-					pthread_mutex_lock(&gPlugIn_StateMutex);
-					*((UInt32*)outData) = (inObjectID == kObjectID_DataSource_Input_Master) ? gDataSource_Input_Master_Value : gDataSource_Output_Master_Value;
-					pthread_mutex_unlock(&gPlugIn_StateMutex);
-					*outDataSize = sizeof(UInt32);
-					break;
-
-				case kAudioSelectorControlPropertyAvailableItems:
-					//	This returns the IDs for all the items the data source control supports.
-					
-					//	Calculate the number of items that have been requested. Note that this
-					//	number is allowed to be smaller than the actual size of the list. In such
-					//	case, only that number of items will be returned
-					theNumberItemsToFetch = inDataSize / sizeof(UInt32);
-					
-					//	clamp it to the number of items we have
-					if(theNumberItemsToFetch > kDataSource_NumberItems)
-					{
-						theNumberItemsToFetch = kDataSource_NumberItems;
-					}
-					
-					//	fill out the return array
-					for(theItemIndex = 0; theItemIndex < theNumberItemsToFetch; ++theItemIndex)
-					{
-						((UInt32*)outData)[theItemIndex] = theItemIndex;
-					}
-					
-					//	report how much we wrote
-					*outDataSize = theNumberItemsToFetch * sizeof(UInt32);
-					break;
-
-				case kAudioSelectorControlPropertyItemName:
-					//	This returns the user-readable name for the selector item in the qualifier
-					FailWithAction(inDataSize < sizeof(CFStringRef), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetControlPropertyData: not enough space for the return value of kAudioSelectorControlPropertyItemName for the data source control");
-					FailWithAction(inQualifierDataSize != sizeof(UInt32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetControlPropertyData: wrong size for the qualifier of kAudioSelectorControlPropertyItemName for the data source control");
-					FailWithAction(*((const UInt32*)inQualifierData) >= kDataSource_NumberItems, theAnswer = kAudioHardwareIllegalOperationError, Done, "LoopbackAudio_GetControlPropertyData: the item in the qualifier is not valid for kAudioSelectorControlPropertyItemName for the data source control");
-					*((CFStringRef*)outData) = CFStringCreateWithFormat(NULL, NULL, CFSTR(kDataSource_ItemNamePattern), *((const UInt32*)inQualifierData));
-					*outDataSize = sizeof(CFStringRef);
-					break;
-
-				default:
-					theAnswer = kAudioHardwareUnknownPropertyError;
-					break;
-			};
-			break;
-				
 		default:
 			theAnswer = kAudioHardwareBadObjectError;
 			break;
@@ -3582,8 +2535,7 @@ static OSStatus	LoopbackAudio_SetControlPropertyData(AudioServerPlugInDriverRef 
 	
 	//	declare the local variables
 	OSStatus theAnswer = 0;
-	Float32 theNewVolume;
-	
+
 	//	check the arguments
 	FailWithAction(inDriver != gAudioServerPlugInDriverRef, theAnswer = kAudioHardwareBadObjectError, Done, "LoopbackAudio_SetControlPropertyData: bad driver reference");
 	FailWithAction(inAddress == NULL, theAnswer = kAudioHardwareIllegalOperationError, Done, "LoopbackAudio_SetControlPropertyData: no address");
@@ -3598,140 +2550,19 @@ static OSStatus	LoopbackAudio_SetControlPropertyData(AudioServerPlugInDriverRef 
 	//	property in the LoopbackAudio_GetControlPropertyData() method.
 	switch(inObjectID)
 	{
-		case kObjectID_Volume_Input_Master:
-		case kObjectID_Volume_Output_Master:
-			switch(inAddress->mSelector)
-			{
-				case kAudioLevelControlPropertyScalarValue:
-					//	For the scalar volume, we clamp the new value to [0, 1]. Note that if this
-					//	value changes, it implies that the dB value changed too.
-					FailWithAction(inDataSize != sizeof(Float32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_SetControlPropertyData: wrong size for the data for kAudioLevelControlPropertyScalarValue");
-					theNewVolume = *((const Float32*)inData);
-					if(theNewVolume < 0.0)
-					{
-						theNewVolume = 0.0;
-					}
-					else if(theNewVolume > 1.0)
-					{
-						theNewVolume = 1.0;
-					}
-					pthread_mutex_lock(&gPlugIn_StateMutex);
-					if(inObjectID == kObjectID_Volume_Input_Master)
-					{
-						if(gVolume_Input_Master_Value != theNewVolume)
-						{
-							gVolume_Input_Master_Value = theNewVolume;
-							*outNumberPropertiesChanged = 2;
-							outChangedAddresses[0].mSelector = kAudioLevelControlPropertyScalarValue;
-							outChangedAddresses[0].mScope = kAudioObjectPropertyScopeGlobal;
-							outChangedAddresses[0].mElement = kAudioObjectPropertyElementMaster;
-							outChangedAddresses[1].mSelector = kAudioLevelControlPropertyDecibelValue;
-							outChangedAddresses[1].mScope = kAudioObjectPropertyScopeGlobal;
-							outChangedAddresses[1].mElement = kAudioObjectPropertyElementMaster;
-						}
-					}
-					else
-					{
-						if(gVolume_Output_Master_Value != theNewVolume)
-						{
-							gVolume_Output_Master_Value = theNewVolume;
-							*outNumberPropertiesChanged = 2;
-							outChangedAddresses[0].mSelector = kAudioLevelControlPropertyScalarValue;
-							outChangedAddresses[0].mScope = kAudioObjectPropertyScopeGlobal;
-							outChangedAddresses[0].mElement = kAudioObjectPropertyElementMaster;
-							outChangedAddresses[1].mSelector = kAudioLevelControlPropertyDecibelValue;
-							outChangedAddresses[1].mScope = kAudioObjectPropertyScopeGlobal;
-							outChangedAddresses[1].mElement = kAudioObjectPropertyElementMaster;
-						}
-					}
-					pthread_mutex_unlock(&gPlugIn_StateMutex);
-					break;
-				
-				case kAudioLevelControlPropertyDecibelValue:
-					//	For the dB value, we first convert it to a scalar value since that is how
-					//	the value is tracked. Note that if this value changes, it implies that the
-					//	scalar value changes as well.
-					FailWithAction(inDataSize != sizeof(Float32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_SetControlPropertyData: wrong size for the data for kAudioLevelControlPropertyScalarValue");
-					theNewVolume = *((const Float32*)inData);
-					if(theNewVolume < kVolume_MinDB)
-					{
-						theNewVolume = kVolume_MinDB;
-					}
-					else if(theNewVolume > kVolume_MaxDB)
-					{
-						theNewVolume = kVolume_MaxDB;
-					}
-					//	Note that we square the scalar value before converting to dB so as to
-					//	provide a better curve for the slider. We undo that here.
-					theNewVolume = theNewVolume - kVolume_MinDB;
-					theNewVolume /= kVolume_MaxDB - kVolume_MinDB;
-					theNewVolume = sqrtf(theNewVolume);
-					pthread_mutex_lock(&gPlugIn_StateMutex);
-					if(inObjectID == kObjectID_Volume_Input_Master)
-					{
-						if(gVolume_Input_Master_Value != theNewVolume)
-						{
-							gVolume_Input_Master_Value = theNewVolume;
-							*outNumberPropertiesChanged = 2;
-							outChangedAddresses[0].mSelector = kAudioLevelControlPropertyScalarValue;
-							outChangedAddresses[0].mScope = kAudioObjectPropertyScopeGlobal;
-							outChangedAddresses[0].mElement = kAudioObjectPropertyElementMaster;
-							outChangedAddresses[1].mSelector = kAudioLevelControlPropertyDecibelValue;
-							outChangedAddresses[1].mScope = kAudioObjectPropertyScopeGlobal;
-							outChangedAddresses[1].mElement = kAudioObjectPropertyElementMaster;
-						}
-					}
-					else
-					{
-						if(gVolume_Output_Master_Value != theNewVolume)
-						{
-							gVolume_Output_Master_Value = theNewVolume;
-							*outNumberPropertiesChanged = 2;
-							outChangedAddresses[0].mSelector = kAudioLevelControlPropertyScalarValue;
-							outChangedAddresses[0].mScope = kAudioObjectPropertyScopeGlobal;
-							outChangedAddresses[0].mElement = kAudioObjectPropertyElementMaster;
-							outChangedAddresses[1].mSelector = kAudioLevelControlPropertyDecibelValue;
-							outChangedAddresses[1].mScope = kAudioObjectPropertyScopeGlobal;
-							outChangedAddresses[1].mElement = kAudioObjectPropertyElementMaster;
-						}
-					}
-					pthread_mutex_unlock(&gPlugIn_StateMutex);
-					break;
-				
-				default:
-					theAnswer = kAudioHardwareUnknownPropertyError;
-					break;
-			};
-			break;
-		
-		case kObjectID_Mute_Input_Master:
 		case kObjectID_Mute_Output_Master:
 			switch(inAddress->mSelector)
 			{
 				case kAudioBooleanControlPropertyValue:
 					FailWithAction(inDataSize != sizeof(UInt32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_SetControlPropertyData: wrong size for the data for kAudioBooleanControlPropertyValue");
 					pthread_mutex_lock(&gPlugIn_StateMutex);
-					if(inObjectID == kObjectID_Mute_Input_Master)
+					if(gMute_Output_Master_Value != (*((const UInt32*)inData) != 0))
 					{
-						if(gMute_Input_Master_Value != (*((const UInt32*)inData) != 0))
-						{
-							gMute_Input_Master_Value = *((const UInt32*)inData) != 0;
-							*outNumberPropertiesChanged = 1;
-							outChangedAddresses[0].mSelector = kAudioBooleanControlPropertyValue;
-							outChangedAddresses[0].mScope = kAudioObjectPropertyScopeGlobal;
-							outChangedAddresses[0].mElement = kAudioObjectPropertyElementMaster;
-						}
-					}
-					else
-					{
-						if(gMute_Output_Master_Value != (*((const UInt32*)inData) != 0))
-						{
-							gMute_Output_Master_Value = *((const UInt32*)inData) != 0;
-							*outNumberPropertiesChanged = 1;
-							outChangedAddresses[0].mSelector = kAudioBooleanControlPropertyValue;
-							outChangedAddresses[0].mScope = kAudioObjectPropertyScopeGlobal;
-							outChangedAddresses[0].mElement = kAudioObjectPropertyElementMaster;
-						}
+						gMute_Output_Master_Value = *((const UInt32*)inData) != 0;
+						*outNumberPropertiesChanged = 1;
+						outChangedAddresses[0].mSelector = kAudioBooleanControlPropertyValue;
+						outChangedAddresses[0].mScope = kAudioObjectPropertyScopeGlobal;
+						outChangedAddresses[0].mElement = kAudioObjectPropertyElementMaster;
 					}
 					pthread_mutex_unlock(&gPlugIn_StateMutex);
 					break;
@@ -3742,47 +2573,6 @@ static OSStatus	LoopbackAudio_SetControlPropertyData(AudioServerPlugInDriverRef 
 			};
 			break;
 		
-		case kObjectID_DataSource_Input_Master:
-		case kObjectID_DataSource_Output_Master:
-			switch(inAddress->mSelector)
-			{
-				case kAudioSelectorControlPropertyCurrentItem:
-					//	For selector controls, we check to make sure the requested value is in the
-					//	available items list and just store the value.
-					FailWithAction(inDataSize != sizeof(UInt32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_SetControlPropertyData: wrong size for the data for kAudioSelectorControlPropertyCurrentItem");
-					FailWithAction(*((const UInt32*)inData) >= kDataSource_NumberItems, theAnswer = kAudioHardwareIllegalOperationError, Done, "LoopbackAudio_SetControlPropertyData: requested item not in available items list for kAudioSelectorControlPropertyCurrentItem");
-					pthread_mutex_lock(&gPlugIn_StateMutex);
-					if(inObjectID == kObjectID_DataSource_Input_Master)
-					{
-						if(gDataSource_Input_Master_Value != *((const UInt32*)inData))
-						{
-							gDataSource_Input_Master_Value = *((const UInt32*)inData);
-							*outNumberPropertiesChanged = 1;
-							outChangedAddresses[0].mSelector = kAudioSelectorControlPropertyCurrentItem;
-							outChangedAddresses[0].mScope = kAudioObjectPropertyScopeGlobal;
-							outChangedAddresses[0].mElement = kAudioObjectPropertyElementMaster;
-						}
-					}
-					else
-					{
-						if(gDataSource_Output_Master_Value != *((const UInt32*)inData))
-						{
-							gDataSource_Output_Master_Value = *((const UInt32*)inData);
-							*outNumberPropertiesChanged = 1;
-							outChangedAddresses[0].mSelector = kAudioSelectorControlPropertyCurrentItem;
-							outChangedAddresses[0].mScope = kAudioObjectPropertyScopeGlobal;
-							outChangedAddresses[0].mElement = kAudioObjectPropertyElementMaster;
-						}
-					}
-					pthread_mutex_unlock(&gPlugIn_StateMutex);
-					break;
-				
-				default:
-					theAnswer = kAudioHardwareUnknownPropertyError;
-					break;
-			};
-			break;
-				
 		default:
 			theAnswer = kAudioHardwareBadObjectError;
 			break;
@@ -3815,7 +2605,7 @@ static OSStatus	LoopbackAudio_StartIO(AudioServerPlugInDriverRef inDriver, Audio
 	pthread_mutex_lock(&gPlugIn_StateMutex);
 	
 	//	figure out what we need to do
-	if(gDevice_IOIsRunning == UINT64_MAX)
+	if(gDevice_IOIsRunning == UINT32_MAX)
 	{
 		//	overflowing is an error
 		theAnswer = kAudioHardwareIllegalOperationError;
@@ -3823,10 +2613,12 @@ static OSStatus	LoopbackAudio_StartIO(AudioServerPlugInDriverRef inDriver, Audio
 	else if(gDevice_IOIsRunning == 0)
 	{
 		//	We need to start the hardware, which in this case is just anchoring the time line.
+		TPCircularBufferInit(&gDevice_RingBuffer, kDevice_RingBuffSize);
+		gDevice_NumWarmupCycles = 0;
+		gDevice_TotalFrames = 0;
+		gDevice_LastWrapTimeStamp = mach_absolute_time();
+		
 		gDevice_IOIsRunning = 1;
-		gDevice_NumberTimeStamps = 0;
-		gDevice_AnchorSampleTime = 0;
-		gDevice_AnchorHostTime = mach_absolute_time();
 	}
 	else
 	{
@@ -3867,6 +2659,7 @@ static OSStatus	LoopbackAudio_StopIO(AudioServerPlugInDriverRef inDriver, AudioO
 	else if(gDevice_IOIsRunning == 1)
 	{
 		//	We need to stop the hardware, which in this case means that there's nothing to do.
+		TPCircularBufferCleanup(&gDevice_RingBuffer);
 		gDevice_IOIsRunning = 0;
 	}
 	else
@@ -3897,11 +2690,7 @@ static OSStatus	LoopbackAudio_GetZeroTimeStamp(AudioServerPlugInDriverRef inDriv
 	
 	//	declare the local variables
 	OSStatus theAnswer = 0;
-	UInt64 theCurrentHostTime;
-	Float64 theHostTicksPerRingBuffer;
-	Float64 theHostTickOffset;
-	UInt64 theNextHostTime;
-	
+
 	//	check the arguments
 	FailWithAction(inDriver != gAudioServerPlugInDriverRef, theAnswer = kAudioHardwareBadObjectError, Done, "LoopbackAudio_GetZeroTimeStamp: bad driver reference");
 	FailWithAction(inDeviceObjectID != kObjectID_Device, theAnswer = kAudioHardwareBadObjectError, Done, "LoopbackAudio_GetZeroTimeStamp: bad device ID");
@@ -3909,25 +2698,11 @@ static OSStatus	LoopbackAudio_GetZeroTimeStamp(AudioServerPlugInDriverRef inDriv
 	//	we need to hold the locks
 	pthread_mutex_lock(&gDevice_IOMutex);
 	
-	//	get the current host time
-	theCurrentHostTime = mach_absolute_time();
-	
-	//	calculate the next host time
-	theHostTicksPerRingBuffer = gDevice_HostTicksPerFrame * ((Float64)kDevice_RingBufferSize);
-	theHostTickOffset = ((Float64)(gDevice_NumberTimeStamps + 1)) * theHostTicksPerRingBuffer;
-	theNextHostTime = gDevice_AnchorHostTime + ((UInt64)theHostTickOffset);
-	
-	//	go to the next time if the next host time is less than the current time
-	if(theNextHostTime <= theCurrentHostTime)
-	{
-		++gDevice_NumberTimeStamps;
-	}
-	
-	//	set the return values
-	*outSampleTime = gDevice_NumberTimeStamps * kDevice_RingBufferSize;
-	*outHostTime = gDevice_AnchorHostTime + (((Float64)gDevice_NumberTimeStamps) * theHostTicksPerRingBuffer);
+	*outHostTime = gDevice_LastWrapTimeStamp;
+	*outSampleTime = (UInt64)(gDevice_TotalFrames / kDevice_DesiredNumFrames) * kDevice_DesiredNumFrames;
 	*outSeed = 1;
-	
+//	DebugPrint("ZeroTS: SampleTime: %f HostTime: %llu\n", *outSampleTime, *outHostTime);
+
 	//	unlock the state lock
 	pthread_mutex_unlock(&gDevice_IOMutex);
 	
@@ -4007,17 +2782,66 @@ static OSStatus	LoopbackAudio_DoIOOperation(AudioServerPlugInDriverRef inDriver,
 	
 	//	declare the local variables
 	OSStatus theAnswer = 0;
-	
+	int32_t availableBytes;
+	void *bufferPointer;
+
 	//	check the arguments
 	FailWithAction(inDriver != gAudioServerPlugInDriverRef, theAnswer = kAudioHardwareBadObjectError, Done, "LoopbackAudio_DoIOOperation: bad driver reference");
 	FailWithAction(inDeviceObjectID != kObjectID_Device, theAnswer = kAudioHardwareBadObjectError, Done, "LoopbackAudio_DoIOOperation: bad device ID");
 	FailWithAction((inStreamObjectID != kObjectID_Stream_Input) && (inStreamObjectID != kObjectID_Stream_Output), theAnswer = kAudioHardwareBadObjectError, Done, "LoopbackAudio_DoIOOperation: bad stream ID");
 
-	//	clear the buffer if this iskAudioServerPlugInIOOperationReadInput
-	if(inOperationID == kAudioServerPlugInIOOperationReadInput)
+	switch(inOperationID)
 	{
-		//	we are always dealing with a 2 channel 32 bit float buffer
-		memset(ioMainBuffer, 0, inIOBufferFrameSize * 8);
+		case kAudioServerPlugInIOOperationReadInput:
+		{ // provide input from our internal buffer
+			if (gDevice_NumWarmupCycles < kDevice_NumWarmupCycles)
+			{
+				DebugPrint("ReadInput: warmup %i, zeroing %i bytes (= %i frames) time: %f\n", gDevice_NumWarmupCycles, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame, inIOBufferFrameSize, inIOCycleInfo->mInputTime.mSampleTime);
+				memset(ioMainBuffer, 0, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame);
+			}
+			else
+			{
+				bufferPointer = TPCircularBufferTail(&gDevice_RingBuffer, &availableBytes);
+				if (availableBytes < inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame)
+				{ // not enough data available, buffer up some
+					DebugPrint("ReadInput: available bytes: %i requested bytes: %i (= %i frames) time: %f\n", availableBytes, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame, inIOBufferFrameSize, inIOCycleInfo->mInputTime.mSampleTime);
+					memset(ioMainBuffer, 0, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame);
+					gDevice_NumWarmupCycles = 0; // buffer once more
+				}
+				else
+				{
+					memcpy(ioMainBuffer, bufferPointer, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame);
+					TPCircularBufferConsume(&gDevice_RingBuffer, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame);
+				}
+			}
+			break;
+		}
+		case kAudioServerPlugInIOOperationWriteMix:
+		{ // write input to our internal buffer
+			const UInt64 timeStamp = mach_absolute_time();
+			
+			bufferPointer = TPCircularBufferHead(&gDevice_RingBuffer, &availableBytes);
+			if (gMute_Output_Master_Value)
+				memset(ioMainBuffer, 0, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame);
+			else
+			{
+//				DebugPrint("WriteMix: available bytes: %i requested bytes: %i (= %i frames) time: %f\n", availableBytes, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame, inIOBufferFrameSize, inIOCycleInfo->mOutputTime.mSampleTime);
+				if (availableBytes < inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame)
+				{ // not enough space for all the data, so let's consume enough so we fit
+					DebugPrint("WriteMix: available bytes: %i requested bytes: %i (= %i frames) time: %f\n", availableBytes, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame, inIOBufferFrameSize, inIOCycleInfo->mOutputTime.mSampleTime);
+					int32_t frameAvailableBytes = availableBytes + (availableBytes % gDevice_CurrentFormat.mBytesPerFrame);
+					TPCircularBufferConsume(&gDevice_RingBuffer, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame - frameAvailableBytes);
+				}
+				TPCircularBufferProduceBytes(&gDevice_RingBuffer, ioMainBuffer, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame);
+			}
+			if ((gDevice_TotalFrames + inIOBufferFrameSize) / kDevice_DesiredNumFrames != gDevice_TotalFrames / kDevice_DesiredNumFrames)
+			{ // wrap
+				gDevice_LastWrapTimeStamp = timeStamp;
+			}
+			gDevice_TotalFrames += inIOBufferFrameSize;
+			gDevice_NumWarmupCycles++;
+			break;
+		}
 	}
 
 Done:
