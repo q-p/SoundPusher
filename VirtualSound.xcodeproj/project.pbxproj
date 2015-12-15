@@ -10,6 +10,13 @@
 		8A7C0D161C1DD24A006EC2C6 /* LoopbackAudio.c in Sources */ = {isa = PBXBuildFile; fileRef = 8A7C0D151C1DD24A006EC2C6 /* LoopbackAudio.c */; };
 		8A7C0D181C1DD691006EC2C6 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 8A7C0D171C1DD691006EC2C6 /* Localizable.strings */; };
 		8A8D38EE1C1DE3A500B9A127 /* TPCircularBuffer.c in Sources */ = {isa = PBXBuildFile; fileRef = 8A8D38EC1C1DE3A500B9A127 /* TPCircularBuffer.c */; };
+		8ADF7A8B1C1EFE9400C4F936 /* AppDelegate.mm in Sources */ = {isa = PBXBuildFile; fileRef = 8ADF7A8A1C1EFE9400C4F936 /* AppDelegate.mm */; };
+		8ADF7A8E1C1EFE9400C4F936 /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = 8ADF7A8D1C1EFE9400C4F936 /* main.m */; };
+		8ADF7A901C1EFE9400C4F936 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8ADF7A8F1C1EFE9400C4F936 /* Assets.xcassets */; };
+		8ADF7A931C1EFE9400C4F936 /* MainMenu.xib in Resources */ = {isa = PBXBuildFile; fileRef = 8ADF7A911C1EFE9400C4F936 /* MainMenu.xib */; };
+		8ADF7A9E1C1F112D00C4F936 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8ADF7A9C1C1F110600C4F936 /* AVFoundation.framework */; };
+		8ADF7AA11C1F118400C4F936 /* CoreAudio.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8ADF7AA01C1F118400C4F936 /* CoreAudio.framework */; };
+		8ADF7AA41C1F2D1500C4F936 /* CoreAudioHelper.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 8ADF7AA21C1F2D1500C4F936 /* CoreAudioHelper.cpp */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -19,6 +26,17 @@
 		8A7C0D171C1DD691006EC2C6 /* Localizable.strings */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; path = Localizable.strings; sourceTree = "<group>"; };
 		8A8D38EC1C1DE3A500B9A127 /* TPCircularBuffer.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = TPCircularBuffer.c; path = thirdparty/TPCircularBuffer/TPCircularBuffer.c; sourceTree = "<group>"; };
 		8A8D38ED1C1DE3A500B9A127 /* TPCircularBuffer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = TPCircularBuffer.h; path = thirdparty/TPCircularBuffer/TPCircularBuffer.h; sourceTree = "<group>"; };
+		8ADF7A871C1EFE9400C4F936 /* SoundPusher.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SoundPusher.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		8ADF7A891C1EFE9400C4F936 /* AppDelegate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AppDelegate.h; sourceTree = "<group>"; };
+		8ADF7A8A1C1EFE9400C4F936 /* AppDelegate.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = AppDelegate.mm; sourceTree = "<group>"; };
+		8ADF7A8D1C1EFE9400C4F936 /* main.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = main.m; sourceTree = "<group>"; };
+		8ADF7A8F1C1EFE9400C4F936 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		8ADF7A921C1EFE9400C4F936 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/MainMenu.xib; sourceTree = "<group>"; };
+		8ADF7A941C1EFE9400C4F936 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		8ADF7A9C1C1F110600C4F936 /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
+		8ADF7AA01C1F118400C4F936 /* CoreAudio.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreAudio.framework; path = System/Library/Frameworks/CoreAudio.framework; sourceTree = SDKROOT; };
+		8ADF7AA21C1F2D1500C4F936 /* CoreAudioHelper.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = CoreAudioHelper.cpp; sourceTree = "<group>"; };
+		8ADF7AA31C1F2D1500C4F936 /* CoreAudioHelper.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = CoreAudioHelper.hpp; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -29,13 +47,25 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		8ADF7A841C1EFE9400C4F936 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8ADF7AA11C1F118400C4F936 /* CoreAudio.framework in Frameworks */,
+				8ADF7A9E1C1F112D00C4F936 /* AVFoundation.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		8A7C0D031C1DB801006EC2C6 = {
 			isa = PBXGroup;
 			children = (
+				8ADF7AA01C1F118400C4F936 /* CoreAudio.framework */,
+				8ADF7A9C1C1F110600C4F936 /* AVFoundation.framework */,
 				8A7C0D101C1DCDCF006EC2C6 /* LoopbackAudio */,
+				8ADF7A881C1EFE9400C4F936 /* SoundPusher */,
 				8A8D38EF1C1DE3B100B9A127 /* thirdparty */,
 				8A7C0D0F1C1DCDCF006EC2C6 /* Products */,
 			);
@@ -45,6 +75,7 @@
 			isa = PBXGroup;
 			children = (
 				8A7C0D0E1C1DCDCF006EC2C6 /* LoopbackAudio.driver */,
+				8ADF7A871C1EFE9400C4F936 /* SoundPusher.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -76,6 +107,29 @@
 			name = TPCircularBuffer;
 			sourceTree = "<group>";
 		};
+		8ADF7A881C1EFE9400C4F936 /* SoundPusher */ = {
+			isa = PBXGroup;
+			children = (
+				8ADF7A891C1EFE9400C4F936 /* AppDelegate.h */,
+				8ADF7A8A1C1EFE9400C4F936 /* AppDelegate.mm */,
+				8ADF7A8F1C1EFE9400C4F936 /* Assets.xcassets */,
+				8ADF7A911C1EFE9400C4F936 /* MainMenu.xib */,
+				8ADF7A941C1EFE9400C4F936 /* Info.plist */,
+				8ADF7A8C1C1EFE9400C4F936 /* Supporting Files */,
+				8ADF7AA21C1F2D1500C4F936 /* CoreAudioHelper.cpp */,
+				8ADF7AA31C1F2D1500C4F936 /* CoreAudioHelper.hpp */,
+			);
+			path = SoundPusher;
+			sourceTree = "<group>";
+		};
+		8ADF7A8C1C1EFE9400C4F936 /* Supporting Files */ = {
+			isa = PBXGroup;
+			children = (
+				8ADF7A8D1C1EFE9400C4F936 /* main.m */,
+			);
+			name = "Supporting Files";
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -96,6 +150,23 @@
 			productReference = 8A7C0D0E1C1DCDCF006EC2C6 /* LoopbackAudio.driver */;
 			productType = "com.apple.product-type.bundle";
 		};
+		8ADF7A861C1EFE9400C4F936 /* SoundPusher */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 8ADF7A971C1EFE9400C4F936 /* Build configuration list for PBXNativeTarget "SoundPusher" */;
+			buildPhases = (
+				8ADF7A831C1EFE9400C4F936 /* Sources */,
+				8ADF7A841C1EFE9400C4F936 /* Frameworks */,
+				8ADF7A851C1EFE9400C4F936 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = SoundPusher;
+			productName = SoundPusher;
+			productReference = 8ADF7A871C1EFE9400C4F936 /* SoundPusher.app */;
+			productType = "com.apple.product-type.application";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -107,6 +178,9 @@
 					8A7C0D0D1C1DCDCF006EC2C6 = {
 						CreatedOnToolsVersion = 7.2;
 					};
+					8ADF7A861C1EFE9400C4F936 = {
+						CreatedOnToolsVersion = 7.2;
+					};
 				};
 			};
 			buildConfigurationList = 8A7C0D071C1DB801006EC2C6 /* Build configuration list for PBXProject "VirtualSound" */;
@@ -115,6 +189,7 @@
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				en,
+				Base,
 			);
 			mainGroup = 8A7C0D031C1DB801006EC2C6;
 			productRefGroup = 8A7C0D0F1C1DCDCF006EC2C6 /* Products */;
@@ -122,6 +197,7 @@
 			projectRoot = "";
 			targets = (
 				8A7C0D0D1C1DCDCF006EC2C6 /* LoopbackAudio */,
+				8ADF7A861C1EFE9400C4F936 /* SoundPusher */,
 			);
 		};
 /* End PBXProject section */
@@ -132,6 +208,15 @@
 			buildActionMask = 2147483647;
 			files = (
 				8A7C0D181C1DD691006EC2C6 /* Localizable.strings in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		8ADF7A851C1EFE9400C4F936 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8ADF7A901C1EFE9400C4F936 /* Assets.xcassets in Resources */,
+				8ADF7A931C1EFE9400C4F936 /* MainMenu.xib in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -147,7 +232,28 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		8ADF7A831C1EFE9400C4F936 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8ADF7AA41C1F2D1500C4F936 /* CoreAudioHelper.cpp in Sources */,
+				8ADF7A8E1C1EFE9400C4F936 /* main.m in Sources */,
+				8ADF7A8B1C1EFE9400C4F936 /* AppDelegate.mm in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXVariantGroup section */
+		8ADF7A911C1EFE9400C4F936 /* MainMenu.xib */ = {
+			isa = PBXVariantGroup;
+			children = (
+				8ADF7A921C1EFE9400C4F936 /* Base */,
+			);
+			name = MainMenu.xib;
+			sourceTree = "<group>";
+		};
+/* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
 		8A7C0D081C1DB801006EC2C6 /* Debug */ = {
@@ -255,6 +361,97 @@
 			};
 			name = Release;
 		};
+		8ADF7A951C1EFE9400C4F936 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CLANG_CXX_LANGUAGE_STANDARD = "c++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_IDENTITY = "-";
+				COMBINE_HIDPI_IMAGES = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu99;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				INFOPLIST_FILE = SoundPusher/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 10.11;
+				MTL_ENABLE_DEBUG_INFO = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = de.maven.SoundPusher;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+		8ADF7A961C1EFE9400C4F936 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CLANG_CXX_LANGUAGE_STANDARD = "c++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_IDENTITY = "-";
+				COMBINE_HIDPI_IMAGES = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu99;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				INFOPLIST_FILE = SoundPusher/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 10.11;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				PRODUCT_BUNDLE_IDENTIFIER = de.maven.SoundPusher;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -274,6 +471,16 @@
 				8A7C0D141C1DCDCF006EC2C6 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		8ADF7A971C1EFE9400C4F936 /* Build configuration list for PBXNativeTarget "SoundPusher" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8ADF7A951C1EFE9400C4F936 /* Debug */,
+				8ADF7A961C1EFE9400C4F936 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
 	};
