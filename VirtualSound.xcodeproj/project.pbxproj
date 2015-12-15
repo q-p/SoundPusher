@@ -17,6 +17,7 @@
 		8ADF7A9E1C1F112D00C4F936 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8ADF7A9C1C1F110600C4F936 /* AVFoundation.framework */; };
 		8ADF7AA11C1F118400C4F936 /* CoreAudio.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8ADF7AA01C1F118400C4F936 /* CoreAudio.framework */; };
 		8ADF7AA41C1F2D1500C4F936 /* CoreAudioHelper.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 8ADF7AA21C1F2D1500C4F936 /* CoreAudioHelper.cpp */; };
+		8ADF7B4F1C2016F700C4F936 /* README.md in Sources */ = {isa = PBXBuildFile; fileRef = 8ADF7B4E1C2016F700C4F936 /* README.md */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -37,6 +38,8 @@
 		8ADF7AA01C1F118400C4F936 /* CoreAudio.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreAudio.framework; path = System/Library/Frameworks/CoreAudio.framework; sourceTree = SDKROOT; };
 		8ADF7AA21C1F2D1500C4F936 /* CoreAudioHelper.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = CoreAudioHelper.cpp; sourceTree = "<group>"; };
 		8ADF7AA31C1F2D1500C4F936 /* CoreAudioHelper.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = CoreAudioHelper.hpp; sourceTree = "<group>"; };
+		8ADF7B4E1C2016F700C4F936 /* README.md */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
+		8ADF7B501C201C7300C4F936 /* LoopbackAudio.h */ = {isa = PBXFileReference; fileEncoding = 4; indentWidth = 2; lastKnownFileType = sourcecode.c.h; path = LoopbackAudio.h; sourceTree = "<group>"; tabWidth = 2; usesTabs = 0; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -62,6 +65,7 @@
 		8A7C0D031C1DB801006EC2C6 = {
 			isa = PBXGroup;
 			children = (
+				8ADF7B4E1C2016F700C4F936 /* README.md */,
 				8ADF7AA01C1F118400C4F936 /* CoreAudio.framework */,
 				8ADF7A9C1C1F110600C4F936 /* AVFoundation.framework */,
 				8A7C0D101C1DCDCF006EC2C6 /* LoopbackAudio */,
@@ -84,6 +88,7 @@
 			isa = PBXGroup;
 			children = (
 				8A7C0D151C1DD24A006EC2C6 /* LoopbackAudio.c */,
+				8ADF7B501C201C7300C4F936 /* LoopbackAudio.h */,
 				8A7C0D111C1DCDCF006EC2C6 /* Info.plist */,
 				8A7C0D171C1DD691006EC2C6 /* Localizable.strings */,
 			);
@@ -238,6 +243,7 @@
 			files = (
 				8ADF7AA41C1F2D1500C4F936 /* CoreAudioHelper.cpp in Sources */,
 				8ADF7A8E1C1EFE9400C4F936 /* main.m in Sources */,
+				8ADF7B4F1C2016F700C4F936 /* README.md in Sources */,
 				8ADF7A8B1C1EFE9400C4F936 /* AppDelegate.mm in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

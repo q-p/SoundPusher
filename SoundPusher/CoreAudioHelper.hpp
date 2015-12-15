@@ -58,6 +58,6 @@ protected:
 };
 
 
-}
+} // end namespace CAHelper
 
 #endif /* CoreAudioHelper_hpp */

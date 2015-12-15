@@ -22,6 +22,7 @@
 #include <stdint.h>
 #include <sys/syslog.h>
 
+#include "LoopbackAudio.h"
 #include "TPCircularBuffer.h"
 
 //==================================================================================================
@@ -127,7 +128,6 @@ static pthread_mutex_t			gPlugIn_StateMutex				= PTHREAD_MUTEX_INITIALIZER;
 static UInt32					gPlugIn_RefCount				= 0;
 static AudioServerPlugInHostRef	gPlugIn_Host					= NULL;
 
-#define							kDevice_UID						"de.maven.audio.LoopbackDevice_UID"
 #define							kDevice_ModelUID				"de.maven.audio.LoopbackDevice_ModelUID"
 static pthread_mutex_t			gDevice_IOMutex					= PTHREAD_MUTEX_INITIALIZER;
 
