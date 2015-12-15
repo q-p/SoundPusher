@@ -37,16 +37,10 @@ void DebugPrint(const char *fmt, ...)
 //	vprintf(fmt, args);
 #endif
 #if TARGET_API_MAC_OSX
-	vsyslog(LOG_ERR, fmt, args);
+	vsyslog(LOG_DEBUG, fmt, args);
 #endif
 	va_end(args);
 }
-
-#if TARGET_RT_BIG_ENDIAN
-	#define	FourCCToCString(the4CC)	{ ((char*)&the4CC)[0], ((char*)&the4CC)[1], ((char*)&the4CC)[2], ((char*)&the4CC)[3], 0 }
-#else
-	#define	FourCCToCString(the4CC)	{ ((char*)&the4CC)[3], ((char*)&the4CC)[2], ((char*)&the4CC)[1], ((char*)&the4CC)[0], 0 }
-#endif
 
 #if DEBUG
 
@@ -133,8 +127,8 @@ static pthread_mutex_t			gPlugIn_StateMutex				= PTHREAD_MUTEX_INITIALIZER;
 static UInt32					gPlugIn_RefCount				= 0;
 static AudioServerPlugInHostRef	gPlugIn_Host					= NULL;
 
-#define							kDevice_UID						"LoopbackAudioDevice_UID"
-#define							kDevice_ModelUID				"LoopbackAudioDevice_ModelUID"
+#define							kDevice_UID						"de.maven.audio.LoopbackDevice_UID"
+#define							kDevice_ModelUID				"de.maven.audio.LoopbackDevice_ModelUID"
 static pthread_mutex_t			gDevice_IOMutex					= PTHREAD_MUTEX_INITIALIZER;
 
 static AudioStreamBasicDescription gDevice_CurrentFormat = {
@@ -2806,7 +2800,7 @@ static OSStatus	LoopbackAudio_DoIOOperation(AudioServerPlugInDriverRef inDriver,
 				{ // not enough data available, buffer up some
 					DebugPrint("ReadInput: available bytes: %i requested bytes: %i (= %i frames) time: %f\n", availableBytes, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame, inIOBufferFrameSize, inIOCycleInfo->mInputTime.mSampleTime);
 					memset(ioMainBuffer, 0, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame);
-					gDevice_NumWarmupCycles = 0; // buffer once more
+					--gDevice_NumWarmupCycles; // buffer once more
 				}
 				else
 				{
@@ -2839,7 +2833,8 @@ static OSStatus	LoopbackAudio_DoIOOperation(AudioServerPlugInDriverRef inDriver,
 				gDevice_LastWrapTimeStamp = timeStamp;
 			}
 			gDevice_TotalFrames += inIOBufferFrameSize;
-			gDevice_NumWarmupCycles++;
+			if (gDevice_NumWarmupCycles < kDevice_NumWarmupCycles)
+				++gDevice_NumWarmupCycles;
 			break;
 		}
 	}
