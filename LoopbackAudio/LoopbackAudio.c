@@ -30,19 +30,6 @@
 #pragma mark Macros
 //==================================================================================================
 
-void DebugPrint(const char *fmt, ...)
-{
-	va_list args;
-	va_start(args, fmt);
-#if DEBUG
-//	vprintf(fmt, args);
-#endif
-#if TARGET_API_MAC_OSX
-	vsyslog(LOG_DEBUG, fmt, args);
-#endif
-	va_end(args);
-}
-
 #if DEBUG
 
 	#define	DebugMsg(inFormat, ...)	syslog(LOG_NOTICE, inFormat, ## __VA_ARGS__)
@@ -112,7 +99,7 @@ enum
 	kMaxSupportedChannels		= 6,
 	kNumSupportedSampleRates	= 3,
 	kDevice_NumWarmupCycles		= 2,
-	kDevice_RingBuffSize		= 4096 * sizeof(float) * kMaxSupportedChannels, // space for 170 frames of 6 channels * float
+	kDevice_RingBuffSize		= 4096 * sizeof(float) * kMaxSupportedChannels, // space for 4096 frames of 6 channels * float
 	kDevice_DesiredNumFrames	= 2048, // CoreAudio tries at least 300 microseconds worth of frames or 3/8th of the buffer, which for us is 48 frames
 };
 
@@ -2695,7 +2682,7 @@ static OSStatus	LoopbackAudio_GetZeroTimeStamp(AudioServerPlugInDriverRef inDriv
 	*outHostTime = gDevice_LastWrapTimeStamp;
 	*outSampleTime = (UInt64)(gDevice_TotalFrames / kDevice_DesiredNumFrames) * kDevice_DesiredNumFrames;
 	*outSeed = 1;
-//	DebugPrint("ZeroTS: SampleTime: %f HostTime: %llu\n", *outSampleTime, *outHostTime);
+//	DebugMsg("ZeroTS: SampleTime: %f HostTime: %llu\n", *outSampleTime, *outHostTime);
 
 	//	unlock the state lock
 	pthread_mutex_unlock(&gDevice_IOMutex);
@@ -2769,8 +2756,7 @@ Done:
 
 static OSStatus	LoopbackAudio_DoIOOperation(AudioServerPlugInDriverRef inDriver, AudioObjectID inDeviceObjectID, AudioObjectID inStreamObjectID, UInt32 inClientID, UInt32 inOperationID, UInt32 inIOBufferFrameSize, const AudioServerPlugInIOCycleInfo* inIOCycleInfo, void* ioMainBuffer, void* ioSecondaryBuffer)
 {
-	//	This is called to actuall perform a given operation. For this device, all we need to do is
-	//	clear the buffer for the ReadInput operation.
+	//	This is called to actuall perform a given operation.
 	
 	#pragma unused(inClientID, inIOCycleInfo, ioSecondaryBuffer)
 	
@@ -2790,22 +2776,30 @@ static OSStatus	LoopbackAudio_DoIOOperation(AudioServerPlugInDriverRef inDriver,
 		{ // provide input from our internal buffer
 			if (gDevice_NumWarmupCycles < kDevice_NumWarmupCycles)
 			{
-				DebugPrint("ReadInput: warmup %i, zeroing %i bytes (= %i frames) time: %f\n", gDevice_NumWarmupCycles, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame, inIOBufferFrameSize, inIOCycleInfo->mInputTime.mSampleTime);
+				DebugMsg("LoopbackAudio_ReadInput(warmup %i): zeroing %i bytes (= %i frames) time: %f\n", gDevice_NumWarmupCycles, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame, inIOBufferFrameSize, inIOCycleInfo->mInputTime.mSampleTime);
 				memset(ioMainBuffer, 0, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame);
 			}
 			else
 			{
 				bufferPointer = TPCircularBufferTail(&gDevice_RingBuffer, &availableBytes);
-				if (availableBytes < inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame)
-				{ // not enough data available, buffer up some
-					DebugPrint("ReadInput: available bytes: %i requested bytes: %i (= %i frames) time: %f\n", availableBytes, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame, inIOBufferFrameSize, inIOCycleInfo->mInputTime.mSampleTime);
-					memset(ioMainBuffer, 0, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame);
-					--gDevice_NumWarmupCycles; // buffer once more
+				if (availableBytes > 2 * inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame)
+				{ // we try not to let our buffer get too full (maybe there's no consumer), so consume some old data to keep latency low
+					const int32_t numDrop = availableBytes - 2 * inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame;
+//					DebugMsg("LoopbackAudio_ReadInput(high-water): available bytes: %i requested bytes: %i (= %i frames) time: %f dropping: %i\n", availableBytes, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame, inIOBufferFrameSize, inIOCycleInfo->mInputTime.mSampleTime, numDrop);
+					TPCircularBufferConsume(&gDevice_RingBuffer, numDrop);
+					availableBytes -= numDrop;
 				}
-				else
+
+				if (availableBytes >= inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame)
 				{
 					memcpy(ioMainBuffer, bufferPointer, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame);
 					TPCircularBufferConsume(&gDevice_RingBuffer, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame);
+				}
+				else
+				{ // not enough data available, buffer up some
+					DebugMsg("LoopbackAudio_ReadInput(low-water): available bytes: %i requested bytes: %i (= %i frames) time: %f\n", availableBytes, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame, inIOBufferFrameSize, inIOCycleInfo->mInputTime.mSampleTime);
+					memset(ioMainBuffer, 0, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame);
+					--gDevice_NumWarmupCycles; // buffer once more
 				}
 			}
 			break;
@@ -2819,12 +2813,9 @@ static OSStatus	LoopbackAudio_DoIOOperation(AudioServerPlugInDriverRef inDriver,
 				memset(ioMainBuffer, 0, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame);
 			else
 			{
-//				DebugPrint("WriteMix: available bytes: %i requested bytes: %i (= %i frames) time: %f\n", availableBytes, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame, inIOBufferFrameSize, inIOCycleInfo->mOutputTime.mSampleTime);
 				if (availableBytes < inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame)
-				{ // not enough space for all the data, so let's consume enough so we fit
-					DebugPrint("WriteMix: available bytes: %i requested bytes: %i (= %i frames) time: %f\n", availableBytes, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame, inIOBufferFrameSize, inIOCycleInfo->mOutputTime.mSampleTime);
-					int32_t frameAvailableBytes = availableBytes + (availableBytes % gDevice_CurrentFormat.mBytesPerFrame);
-					TPCircularBufferConsume(&gDevice_RingBuffer, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame - frameAvailableBytes);
+				{ // not enough space for all the data (e.g. because there is no reader)
+//					DebugMsg("LoopbackAudio_WriteMix(high-water): available bytes: %i requested bytes: %i (= %i frames) time: %f\n", availableBytes, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame, inIOBufferFrameSize, inIOCycleInfo->mOutputTime.mSampleTime);
 				}
 				TPCircularBufferProduceBytes(&gDevice_RingBuffer, ioMainBuffer, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame);
 			}
