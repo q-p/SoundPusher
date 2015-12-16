@@ -1,6 +1,7 @@
 # VirtualSound.todo
-- Write generic encoder
-  - Implement AC3 (then DTS)
++ Write generic encoder
+  + Implement AC3 (then DTS)
+    - DTS support in ffmpeg is experimental
 - write forwarder using destination format, output device, source device
   - go from destination format, set output format, then best input format format
 - Check timing in Loopback

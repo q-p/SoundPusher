@@ -10,6 +10,7 @@
 		8A7C0D161C1DD24A006EC2C6 /* LoopbackAudio.c in Sources */ = {isa = PBXBuildFile; fileRef = 8A7C0D151C1DD24A006EC2C6 /* LoopbackAudio.c */; };
 		8A7C0D181C1DD691006EC2C6 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 8A7C0D171C1DD691006EC2C6 /* Localizable.strings */; };
 		8A8D38EE1C1DE3A500B9A127 /* TPCircularBuffer.c in Sources */ = {isa = PBXBuildFile; fileRef = 8A8D38EC1C1DE3A500B9A127 /* TPCircularBuffer.c */; };
+		8A9757041C204EAA00F20BD7 /* SPDIFAudioEncoder.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 8A9757021C204EAA00F20BD7 /* SPDIFAudioEncoder.cpp */; };
 		8ADF7A8B1C1EFE9400C4F936 /* AppDelegate.mm in Sources */ = {isa = PBXBuildFile; fileRef = 8ADF7A8A1C1EFE9400C4F936 /* AppDelegate.mm */; };
 		8ADF7A8E1C1EFE9400C4F936 /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = 8ADF7A8D1C1EFE9400C4F936 /* main.m */; };
 		8ADF7A901C1EFE9400C4F936 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8ADF7A8F1C1EFE9400C4F936 /* Assets.xcassets */; };
@@ -17,7 +18,6 @@
 		8ADF7A9E1C1F112D00C4F936 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8ADF7A9C1C1F110600C4F936 /* AVFoundation.framework */; };
 		8ADF7AA11C1F118400C4F936 /* CoreAudio.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8ADF7AA01C1F118400C4F936 /* CoreAudio.framework */; };
 		8ADF7AA41C1F2D1500C4F936 /* CoreAudioHelper.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 8ADF7AA21C1F2D1500C4F936 /* CoreAudioHelper.cpp */; };
-		8ADF7B4F1C2016F700C4F936 /* README.md in Sources */ = {isa = PBXBuildFile; fileRef = 8ADF7B4E1C2016F700C4F936 /* README.md */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -27,6 +27,8 @@
 		8A7C0D171C1DD691006EC2C6 /* Localizable.strings */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; path = Localizable.strings; sourceTree = "<group>"; };
 		8A8D38EC1C1DE3A500B9A127 /* TPCircularBuffer.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = TPCircularBuffer.c; path = thirdparty/TPCircularBuffer/TPCircularBuffer.c; sourceTree = "<group>"; };
 		8A8D38ED1C1DE3A500B9A127 /* TPCircularBuffer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = TPCircularBuffer.h; path = thirdparty/TPCircularBuffer/TPCircularBuffer.h; sourceTree = "<group>"; };
+		8A9757021C204EAA00F20BD7 /* SPDIFAudioEncoder.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = SPDIFAudioEncoder.cpp; sourceTree = "<group>"; };
+		8A9757031C204EAA00F20BD7 /* SPDIFAudioEncoder.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = SPDIFAudioEncoder.hpp; sourceTree = "<group>"; };
 		8ADF7A871C1EFE9400C4F936 /* SoundPusher.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SoundPusher.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		8ADF7A891C1EFE9400C4F936 /* AppDelegate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AppDelegate.h; sourceTree = "<group>"; };
 		8ADF7A8A1C1EFE9400C4F936 /* AppDelegate.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = AppDelegate.mm; sourceTree = "<group>"; };
@@ -123,6 +125,8 @@
 				8ADF7A8C1C1EFE9400C4F936 /* Supporting Files */,
 				8ADF7AA21C1F2D1500C4F936 /* CoreAudioHelper.cpp */,
 				8ADF7AA31C1F2D1500C4F936 /* CoreAudioHelper.hpp */,
+				8A9757021C204EAA00F20BD7 /* SPDIFAudioEncoder.cpp */,
+				8A9757031C204EAA00F20BD7 /* SPDIFAudioEncoder.hpp */,
 			);
 			path = SoundPusher;
 			sourceTree = "<group>";
@@ -243,7 +247,7 @@
 			files = (
 				8ADF7AA41C1F2D1500C4F936 /* CoreAudioHelper.cpp in Sources */,
 				8ADF7A8E1C1EFE9400C4F936 /* main.m in Sources */,
-				8ADF7B4F1C2016F700C4F936 /* README.md in Sources */,
+				8A9757041C204EAA00F20BD7 /* SPDIFAudioEncoder.cpp in Sources */,
 				8ADF7A8B1C1EFE9400C4F936 /* AppDelegate.mm in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -407,12 +411,19 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				INFOPLIST_FILE = SoundPusher/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				LIBRARY_SEARCH_PATHS = $FFMPEG_HOME/lib;
 				MACOSX_DEPLOYMENT_TARGET = 10.11;
 				MTL_ENABLE_DEBUG_INFO = YES;
 				ONLY_ACTIVE_ARCH = YES;
+				OTHER_LDFLAGS = (
+					"-lavformat",
+					"-lavcodec",
+					"-lavutil",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = de.maven.SoundPusher;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
+				USER_HEADER_SEARCH_PATHS = $FFMPEG_HOME/include;
 			};
 			name = Debug;
 		};
@@ -450,11 +461,18 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				INFOPLIST_FILE = SoundPusher/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				LIBRARY_SEARCH_PATHS = $FFMPEG_HOME/lib;
 				MACOSX_DEPLOYMENT_TARGET = 10.11;
 				MTL_ENABLE_DEBUG_INFO = NO;
+				OTHER_LDFLAGS = (
+					"-lavformat",
+					"-lavcodec",
+					"-lavutil",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = de.maven.SoundPusher;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
+				USER_HEADER_SEARCH_PATHS = $FFMPEG_HOME/include;
 			};
 			name = Release;
 		};

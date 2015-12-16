@@ -8,15 +8,22 @@
 
 #include <memory>
 
+extern "C" {
+#include "libavcodec/avcodec.h"
+#include "libavformat/avformat.h"
+} // end extern "C"
+
+#include "CoreAudioHelper.hpp"
+#include "SPDIFAudioEncoder.hpp"
+
+
 #import "AppDelegate.h"
+#import "AVFoundation/AVFoundation.h"
 
 @interface AppDelegate ()
 @property (weak) IBOutlet NSWindow *window;
 @end
 
-#import "AVFoundation/AVFoundation.h"
-
-#include "CoreAudioHelper.hpp"
 
 struct Stream
 {
@@ -103,6 +110,14 @@ std::unique_ptr<DeviceContext> _context;
 - (void)applicationDidFinishLaunching:(NSNotification *)aNotification
 {
   // Insert code here to initialize your application
+
+  static dispatch_once_t onceToken;
+  dispatch_once(&onceToken, ^
+  {
+    avcodec_register_all();
+    av_register_all();
+  });
+
   const auto devices = GetDevicesWithDigitalOutput();
   for (const auto &device : devices)
   {
@@ -137,6 +152,17 @@ std::unique_ptr<DeviceContext> _context;
   NSLog(@"Context initialized for Device %u Stream %u Format %@", _context->_device, _context->_stream, [[AVAudioFormat alloc] initWithStreamDescription:&_context->_format.mFormat]);
 
   Test();
+
+  {
+    SPDIFAudioEncoder test(_context->_format.mFormat, kAudioChannelLayoutTag_MPEG_5_1_C, _context->_format.mFormat);
+
+    float zero[1536] = {};
+    const float *frames[6] = {zero, zero, zero, zero, zero, zero};
+    uint8_t spdif[6144];
+
+    test.EncodePacket(1536, frames, sizeof spdif, spdif);
+    test.EncodePacket(1536, frames, sizeof spdif, spdif);
+  }
 
 //  OSStatus status = 0;
 //  _audioEngine = [AVAudioEngine new];
