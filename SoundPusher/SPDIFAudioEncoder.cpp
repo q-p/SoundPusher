@@ -112,14 +112,16 @@ static uint64_t AudioChannelLayoutTagToAVChannelLayout(AudioChannelLayoutTag cha
 #pragma mark SPDIFAudioEncoder
 //==================================================================================================
 
-SPDIFAudioEncoder::SPDIFAudioEncoder(const AudioStreamBasicDescription &inFormat, const AudioChannelLayoutTag &inChannelLayoutTag, const AudioStreamBasicDescription &outFormat, void *options)
-: _inFormat(inFormat), _outFormat(outFormat), _muxer(nullptr), _frame(nullptr), _packet(),
+SPDIFAudioEncoder::SPDIFAudioEncoder(const AudioStreamBasicDescription &inFormat, const AudioChannelLayoutTag channelLayoutTag, const AudioStreamBasicDescription &outFormat, void *options)
+: _inFormat(inFormat), _outFormat(outFormat), _muxer(nullptr), _frame(nullptr), _packetBuffer(nullptr), _packet(),
   _writePacketBuf(nullptr), _writePacketBufSize(0), _numFramesPerPacket(0)
 {
   int status = avformat_alloc_output_context2(&_muxer, nullptr, "spdif", nullptr);
   if (status < 0)
     throw LibAVException(status);
   assert(std::strcmp(_muxer->oformat->name, "spdif") == 0);
+
+  assert(inFormat.mChannelsPerFrame == AudioChannelLayoutTag_GetNumberOfChannels(channelLayoutTag));
 
   const auto outputBitsPerSec = _outFormat.mSampleRate * _outFormat.mChannelsPerFrame * _outFormat.mBitsPerChannel;
 
@@ -138,8 +140,8 @@ SPDIFAudioEncoder::SPDIFAudioEncoder(const AudioStreamBasicDescription &inFormat
   coder->sample_fmt = AV_SAMPLE_FMT_FLTP; // planar float
 
 	coder->sample_rate = _inFormat.mSampleRate;
-	coder->channel_layout = AudioChannelLayoutTagToAVChannelLayout(inChannelLayoutTag);
-	coder->channels = AudioChannelLayoutTag_GetNumberOfChannels(inChannelLayoutTag);
+	coder->channel_layout = AudioChannelLayoutTagToAVChannelLayout(channelLayoutTag);
+	coder->channels = AudioChannelLayoutTag_GetNumberOfChannels(channelLayoutTag);
 	coder->time_base = (AVRational){1, coder->sample_rate};
 
   stream->time_base = coder->time_base;
@@ -162,7 +164,7 @@ SPDIFAudioEncoder::SPDIFAudioEncoder(const AudioStreamBasicDescription &inFormat
   _frame->nb_samples = coder->frame_size;
 	_frame->linesize[0] = _frame->nb_samples * sizeof(SampleT);
 
-  _packetBuffer = static_cast<uint8_t *>(av_malloc(MaxBytesPerPacket));
+  _packetBuffer.reset(static_cast<uint8_t *>(av_malloc(MaxBytesPerPacket)));
 
   av_init_packet(&_packet);
   _packet.stream_index = 0;
@@ -181,8 +183,6 @@ SPDIFAudioEncoder::SPDIFAudioEncoder(const AudioStreamBasicDescription &inFormat
 SPDIFAudioEncoder::~SPDIFAudioEncoder()
 {
   av_write_trailer(_muxer);
-  av_free(_packetBuffer);
-  _packetBuffer = nullptr;
   av_frame_free(&_frame);
   if (_muxer)
   {
@@ -211,7 +211,7 @@ int SPDIFAudioEncoder::WritePacketFunc(void *opaque, uint8_t *buf, int buf_size)
   return buf_size;
 }
 
-UInt32 SPDIFAudioEncoder::EncodePacket(const UInt32 numFrames, const SampleT **inputFrames, UInt32 sizeOutBuffer, void *outBuffer)
+uint32_t SPDIFAudioEncoder::EncodePacket(const uint32_t numFrames, const SampleT **inputFrames, uint32_t sizeOutBuffer, uint8_t *outBuffer)
 {
   if (numFrames != _numFramesPerPacket)
     throw std::invalid_argument("Incorrect number of frames for encoding");
@@ -224,8 +224,9 @@ UInt32 SPDIFAudioEncoder::EncodePacket(const UInt32 numFrames, const SampleT **i
     _frame->data[i] = reinterpret_cast<uint8_t *>(const_cast<SampleT *>(inputFrames[i]));
     _frame->linesize[i] = numFrames * sizeof(SampleT);
   }
+
   // output packet
-  _packet.data = _packetBuffer;
+  _packet.data = _packetBuffer.get();
   _packet.size = MaxBytesPerPacket;
 
   int got_packet = 0;
@@ -246,7 +247,7 @@ UInt32 SPDIFAudioEncoder::EncodePacket(const UInt32 numFrames, const SampleT **i
   assert(_writePacketBuf == static_cast<uint8_t *>(outBuffer) + _writePacketBufSize);
   _writePacketBuf = nullptr; // don't expect another write, except through us
 
-  printf("muxed packet of size %i into %i bytes\n", packetSize, _writePacketBufSize);
+//  printf("muxed packet of size %i into %i bytes\n", packetSize, _writePacketBufSize);
 
 	return _writePacketBufSize;
 }

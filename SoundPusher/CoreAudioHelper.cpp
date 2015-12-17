@@ -41,7 +41,7 @@ CoreAudioException::CoreAudioException(const OSStatus error)
 #pragma mark Device queries
 //==================================================================================================
 
-std::vector<AudioStreamRangedDescription> GetStreamPhysicalFormats(const AudioStreamID stream)
+std::vector<AudioStreamBasicDescription> GetStreamPhysicalFormats(const AudioStreamID stream)
 {
   UInt32 dataSize = 0;
   OSStatus status = noErr;
@@ -53,12 +53,19 @@ std::vector<AudioStreamRangedDescription> GetStreamPhysicalFormats(const AudioSt
     throw CoreAudioException(status);
 
   // get physical formats
-  std::vector<AudioStreamRangedDescription> formats;
-  formats.resize(dataSize / sizeof formats.front());
-  status = AudioObjectGetPropertyData(stream, &physicalFormatsAddress, 0, NULL, &dataSize, formats.data());
+  std::vector<AudioStreamRangedDescription> rangedFormats;
+  rangedFormats.resize(dataSize / sizeof rangedFormats.front());
+  status = AudioObjectGetPropertyData(stream, &physicalFormatsAddress, 0, NULL, &dataSize, rangedFormats.data());
   if (status != noErr)
     throw CoreAudioException(status);
-  formats.resize(dataSize / sizeof formats.front());
+  rangedFormats.resize(dataSize / sizeof rangedFormats.front());
+
+  // throw away ranges
+  std::vector<AudioStreamBasicDescription> formats;
+  formats.reserve(rangedFormats.size());
+  for (const auto &rf : rangedFormats)
+    formats.push_back(rf.mFormat);
+
   return formats;
 }
 
@@ -110,9 +117,11 @@ std::vector<AudioDeviceID> GetDevices()
 
 static const AudioObjectPropertyAddress DeviceHogModeAddress = { kAudioDevicePropertyHogMode, kAudioDevicePropertyScopeOutput, kAudioObjectPropertyElementMaster };
 
-DeviceHogger::DeviceHogger(const AudioDeviceID device)
+DeviceHogger::DeviceHogger(const AudioDeviceID device, const bool shouldHog)
 : _device(device), _hog_pid(-1)
 {
+  if (!shouldHog)
+    return;
   const auto pid = getpid();
   OSStatus status = 0;
   UInt32 dataSize = 0;

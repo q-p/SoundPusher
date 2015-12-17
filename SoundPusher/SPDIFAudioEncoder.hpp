@@ -23,12 +23,14 @@ struct SPDIFAudioEncoder
 {
   typedef float SampleT;
 
-  SPDIFAudioEncoder(const AudioStreamBasicDescription &inFormat, const AudioChannelLayoutTag &inChannelLayoutTag, const AudioStreamBasicDescription &outFormat, void *options = nullptr);
+  SPDIFAudioEncoder(const AudioStreamBasicDescription &inFormat, const AudioChannelLayoutTag channelLayoutTag, const AudioStreamBasicDescription &outFormat, void *options = nullptr);
   ~SPDIFAudioEncoder();
 
   const AudioStreamBasicDescription& GetInFormat() const { return _inFormat; }
   const AudioStreamBasicDescription& GetOutFormat() const { return _outFormat; }
-  UInt32 GetNumFramesPerPacket() const { return 0; } // FIXME
+  uint32_t GetNumFramesPerPacket() const { return _numFramesPerPacket; }
+
+  static constexpr uint32_t MaxBytesPerPacket = 6144;
 
   /// Encodes the given input frames into the outBuffer.
   /**
@@ -38,10 +40,12 @@ struct SPDIFAudioEncoder
    * @param sizeOutBuffer The number of available bytes at outBuffer. Must be at least _outFormat.mBytesPerPacket.
    * @return The number of bytes encoded to outBuffer, or -1 on error.
    */
-  UInt32 EncodePacket(const UInt32 numFrames, const SampleT **inputFrames, UInt32 sizeOutBuffer, void *outBuffer);
+  uint32_t EncodePacket(const uint32_t numFrames, const SampleT **inputFrames, uint32_t sizeOutBuffer, uint8_t *outBuffer);
 
 protected:
   static int WritePacketFunc(void *opaque, uint8_t *buf, int buf_size);
+
+  struct AVDeleter { void operator()(void *p) const { av_free(p); } };
 
   /// The input format to the encoder (i.e. what it requires).
   AudioStreamBasicDescription _inFormat;
@@ -52,18 +56,16 @@ protected:
   /// The input audio frame (containing multiple frames (samples) in CoreAudio terms).
   AVFrame *_frame;
   /// The buffer for the packet to encode the input frame into.
-  uint8_t *_packetBuffer;
+  std::unique_ptr<uint8_t[], AVDeleter> _packetBuffer;
   /// The encoded packet.
   AVPacket _packet;
 
   /// Where WritePacketFunc() dumps its buffer and size
   uint8_t *_writePacketBuf;
-  UInt32 _writePacketBufSize;
-
-  static constexpr UInt32 MaxBytesPerPacket = 6144;
+  uint32_t _writePacketBufSize;
 
   /// The number of input frames required to produce an output packet.
-  UInt32 _numFramesPerPacket;
+  uint32_t _numFramesPerPacket;
 };
 
 #endif /* SPDIFAudioEncoder_hpp */

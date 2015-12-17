@@ -18,14 +18,14 @@ namespace CAHelper {
 
 struct CoreAudioException : std::runtime_error { CoreAudioException(const OSStatus error); };
 
-std::vector<AudioStreamRangedDescription> GetStreamPhysicalFormats(const AudioStreamID stream);
+std::vector<AudioStreamBasicDescription> GetStreamPhysicalFormats(const AudioStreamID stream);
 std::vector<AudioStreamID> GetStreams(const AudioDeviceID device, const bool input);
 std::vector<AudioDeviceID> GetDevices();
 
 /// RAII class for hogging a device
 struct DeviceHogger
 {
-  explicit DeviceHogger(const AudioDeviceID device);
+  DeviceHogger(const AudioDeviceID device, const bool shouldHog);
   DeviceHogger(DeviceHogger &&) = delete; // non-copyable, non-movable
   ~DeviceHogger();
 protected:
@@ -36,7 +36,7 @@ protected:
 /// RAII class for setting the mixing state on a device (and restoring the original state on destruction)
 struct MixingSetter
 {
-  MixingSetter(const AudioDeviceID device, bool supportMixing);
+  MixingSetter(const AudioDeviceID device, const bool supportMixing);
   MixingSetter(MixingSetter &&) = delete; // non-copyable, non-movable
   ~MixingSetter();
 protected:
