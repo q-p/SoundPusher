@@ -9,6 +9,6 @@
 #ifndef LoopbackAudio_h
 #define LoopbackAudio_h
 
-#define kDevice_UID "de.maven.audio.LoopbackDevice_UID"
+#define kLoopbackAudioDevice_UID "de.maven.audio.LoopbackDevice_UID"
 
 #endif /* LoopbackAudio_h */

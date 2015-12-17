@@ -82,7 +82,7 @@ static std::vector<Device> GetLoopbackDevicesWithInput()
     status = AudioObjectGetPropertyData(device, &DeviceUIDAddress, 0, NULL, &dataSize, &uidString);
     if (status != noErr)
       throw CAHelper::CoreAudioException(status);
-    if (![uidString isEqualToString:[NSString stringWithUTF8String:kDevice_UID]])
+    if (![uidString isEqualToString:[NSString stringWithUTF8String:kLoopbackAudioDevice_UID]])
       continue;
 
     const auto streams = CAHelper::GetStreams(device, true /* inputs */);

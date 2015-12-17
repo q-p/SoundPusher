@@ -98,9 +98,15 @@ enum
 {
 	kMaxSupportedChannels		= 6,
 	kNumSupportedSampleRates	= 3,
+
 	kDevice_NumWarmupCycles		= 2,
-	kDevice_RingBuffSize		= 4096 * sizeof(float) * kMaxSupportedChannels, // space for 4096 frames of 6 channels * float
-	kDevice_DesiredNumFrames	= 2048, // CoreAudio tries at least 300 microseconds worth of frames or 3/8th of the buffer, which for us is 48 frames
+
+	// The size of the imaginary ring-buffer used purely for timing purposes
+	kDevice_NumZeroFrames	    = 2048,
+
+	// The size of the *actual* ring-buffer containing buffered output data to provide as input
+	// The size of this is independent of the imaginary hardware ring-buffer providing zero time-stamps
+	kDevice_RingBuffSize		= 4096 * sizeof(float) * kMaxSupportedChannels, // space for 4096 frames of 6 channels * float};
 };
 
 static const Float64 kSupportedSampleRates[kNumSupportedSampleRates] = {32000.0, 44100.0, 48000.0};
@@ -136,11 +142,15 @@ static AudioChannelLayout		gDevice_CurrentChannelLayout = {
 };
 
 static UInt32					gDevice_IOIsRunning				= 0;
-static TPCircularBuffer			gDevice_RingBuffer;
-static UInt32					gDevice_TotalFrames				= 0;
-static UInt32					gDevice_NumWarmupCycles			= 0;
-static UInt64					gDevice_LastWrapTimeStamp		= 0;
+
 static Float64					gDevice_HostTicksPerFrame		= 0.0;
+static UInt64					gDevice_NumberTimeStamps		= 0;
+static Float64					gDevice_AnchorSampleTime		= 0.0;
+static UInt64					gDevice_AnchorHostTime			= 0;
+static UInt64					gDevice_TimeLineSeed			= 1;
+
+static TPCircularBuffer			gDevice_RingBuffer;
+static UInt32					gDevice_NumWarmupCycles			= 0;
 
 static bool						gStream_Input_IsActive			= true;
 static bool						gStream_Output_IsActive			= true;
@@ -1000,7 +1010,7 @@ static OSStatus	LoopbackAudio_GetPlugInPropertyData(AudioServerPlugInDriverRef i
 			FailWithAction(inDataSize < sizeof(AudioObjectID), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetPlugInPropertyData: not enough space for the return value of kAudioPlugInPropertyTranslateUIDToDevice");
 			FailWithAction(inQualifierDataSize == sizeof(CFStringRef), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetPlugInPropertyData: the qualifier is the wrong size for kAudioPlugInPropertyTranslateUIDToDevice");
 			FailWithAction(inQualifierData == NULL, theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetPlugInPropertyData: no qualifier for kAudioPlugInPropertyTranslateUIDToDevice");
-			if(CFStringCompare(*((CFStringRef*)inQualifierData), CFSTR(kDevice_UID), 0) == kCFCompareEqualTo)
+			if(CFStringCompare(*((CFStringRef*)inQualifierData), CFSTR(kLoopbackAudioDevice_UID), 0) == kCFCompareEqualTo)
 			{
 				*((AudioObjectID*)outData) = kObjectID_Device;
 			}
@@ -1456,7 +1466,7 @@ static OSStatus	LoopbackAudio_GetDevicePropertyData(AudioServerPlugInDriverRef i
 			//	audio device across boot sessions. Note that two instances of the same
 			//	device must have different values for this property.
 			FailWithAction(inDataSize < sizeof(CFStringRef), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetDevicePropertyData: not enough space for the return value of kAudioDevicePropertyDeviceUID for the device");
-			*((CFStringRef*)outData) = CFSTR(kDevice_UID);
+			*((CFStringRef*)outData) = CFSTR(kLoopbackAudioDevice_UID);
 			*outDataSize = sizeof(CFStringRef);
 			break;
 
@@ -1766,7 +1776,7 @@ static OSStatus	LoopbackAudio_GetDevicePropertyData(AudioServerPlugInDriverRef i
 			//	successive sample times in the zero time stamps this device provides.
 			FailWithAction(inDataSize < sizeof(UInt32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetDevicePropertyData: not enough space for the return value of kAudioDevicePropertyZeroTimeStampPeriod for the device");
 			// as our ring-buffer only support sizes of page_length, we need to adjust the expected zero time stamp period
-			*((UInt32*)outData) = kDevice_DesiredNumFrames;
+			*((UInt32*)outData) = kDevice_NumZeroFrames;
 			*outDataSize = sizeof(UInt32);
 			break;
 
@@ -2596,9 +2606,12 @@ static OSStatus	LoopbackAudio_StartIO(AudioServerPlugInDriverRef inDriver, Audio
 		//	We need to start the hardware, which in this case is just anchoring the time line.
 		TPCircularBufferInit(&gDevice_RingBuffer, kDevice_RingBuffSize);
 		gDevice_NumWarmupCycles = 0;
-		gDevice_TotalFrames = 0;
-		gDevice_LastWrapTimeStamp = mach_absolute_time();
-		
+
+		gDevice_TimeLineSeed = 1;
+		gDevice_NumberTimeStamps = 0;
+		gDevice_AnchorSampleTime = 0;
+		gDevice_AnchorHostTime = mach_absolute_time();
+
 		gDevice_IOIsRunning = 1;
 	}
 	else
@@ -2664,13 +2677,17 @@ static OSStatus	LoopbackAudio_GetZeroTimeStamp(AudioServerPlugInDriverRef inDriv
 	//	kAudioDevicePropertyZeroTimeStampPeriod apart. This is often modeled using a ring buffer
 	//	where the zero time stamp is updated when wrapping around the ring buffer.
 	//
-	//	For this device, the zero time stamps' sample time increments every kDevice_RingBufferSize
-	//	frames and the host time increments by kDevice_RingBufferSize * gDevice_HostTicksPerFrame.
+	//	For this device, the zero time stamps' sample time increments every kDevice_NumZeroFrames
+	//	frames and the host time increments by kDevice_NumZeroFrames * gDevice_HostTicksPerFrame.
 	
 	#pragma unused(inClientID)
 	
 	//	declare the local variables
 	OSStatus theAnswer = 0;
+	UInt64 theCurrentHostTime;
+	Float64 theHostTicksPerRingBuffer;
+	Float64 theHostTickOffset;
+	UInt64 theNextHostTime;
 
 	//	check the arguments
 	FailWithAction(inDriver != gAudioServerPlugInDriverRef, theAnswer = kAudioHardwareBadObjectError, Done, "LoopbackAudio_GetZeroTimeStamp: bad driver reference");
@@ -2679,10 +2696,24 @@ static OSStatus	LoopbackAudio_GetZeroTimeStamp(AudioServerPlugInDriverRef inDriv
 	//	we need to hold the locks
 	pthread_mutex_lock(&gDevice_IOMutex);
 	
-	*outHostTime = gDevice_LastWrapTimeStamp;
-	*outSampleTime = (UInt64)(gDevice_TotalFrames / kDevice_DesiredNumFrames) * kDevice_DesiredNumFrames;
-	*outSeed = 1;
-//	DebugMsg("ZeroTS: SampleTime: %f HostTime: %llu\n", *outSampleTime, *outHostTime);
+	//	get the current host time
+	theCurrentHostTime = mach_absolute_time();
+	
+	//	calculate the next host time
+	theHostTicksPerRingBuffer = gDevice_HostTicksPerFrame * ((Float64)kDevice_NumZeroFrames);
+	theHostTickOffset = ((Float64)(gDevice_NumberTimeStamps + 1)) * theHostTicksPerRingBuffer;
+	theNextHostTime = gDevice_AnchorHostTime + ((UInt64)theHostTickOffset);
+	
+	//	go to the next time if the next host time is less than the current time
+	if(theNextHostTime <= theCurrentHostTime)
+	{
+		++gDevice_NumberTimeStamps;
+	}
+	
+	//	set the return values
+	*outSampleTime = gDevice_NumberTimeStamps * kDevice_NumZeroFrames;
+	*outHostTime = gDevice_AnchorHostTime + (((Float64)gDevice_NumberTimeStamps) * theHostTicksPerRingBuffer);
+	*outSeed = gDevice_TimeLineSeed;
 
 	//	unlock the state lock
 	pthread_mutex_unlock(&gDevice_IOMutex);
@@ -2800,14 +2831,13 @@ static OSStatus	LoopbackAudio_DoIOOperation(AudioServerPlugInDriverRef inDriver,
 					DebugMsg("LoopbackAudio_ReadInput(low-water): available bytes: %i requested bytes: %i (= %i frames) time: %f\n", availableBytes, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame, inIOBufferFrameSize, inIOCycleInfo->mInputTime.mSampleTime);
 					memset(ioMainBuffer, 0, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame);
 					--gDevice_NumWarmupCycles; // buffer once more
+					++gDevice_TimeLineSeed; // and resync the time-line
 				}
 			}
 			break;
 		}
 		case kAudioServerPlugInIOOperationWriteMix:
 		{ // write input to our internal buffer
-			const UInt64 timeStamp = mach_absolute_time();
-			
 			bufferPointer = TPCircularBufferHead(&gDevice_RingBuffer, &availableBytes);
 			if (gMute_Output_Master_Value)
 				memset(ioMainBuffer, 0, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame);
@@ -2819,11 +2849,6 @@ static OSStatus	LoopbackAudio_DoIOOperation(AudioServerPlugInDriverRef inDriver,
 				}
 				TPCircularBufferProduceBytes(&gDevice_RingBuffer, ioMainBuffer, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame);
 			}
-			if ((gDevice_TotalFrames + inIOBufferFrameSize) / kDevice_DesiredNumFrames != gDevice_TotalFrames / kDevice_DesiredNumFrames)
-			{ // wrap
-				gDevice_LastWrapTimeStamp = timeStamp;
-			}
-			gDevice_TotalFrames += inIOBufferFrameSize;
 			if (gDevice_NumWarmupCycles < kDevice_NumWarmupCycles)
 				++gDevice_NumWarmupCycles;
 			break;
