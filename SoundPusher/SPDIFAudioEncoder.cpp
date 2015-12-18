@@ -238,12 +238,12 @@ uint32_t SPDIFAudioEncoder::EncodePacket(const uint32_t numFrames, const SampleT
   if (!got_packet)
     return 0;
 
-  _writePacketBuf = static_cast<uint8_t *>(outBuffer);
+  _writePacketBuf = outBuffer;
   _writePacketBufSize = sizeOutBuffer;
   status = av_write_frame(_muxer, &_packet);
 	if (status < 0)
     throw LibAVException(status);
-  assert(_writePacketBuf == static_cast<uint8_t *>(outBuffer) + _writePacketBufSize);
+  assert(_writePacketBuf == outBuffer + _writePacketBufSize);
   _writePacketBuf = nullptr; // don't expect another write, except through us
 
 //  printf("muxed packet of size %i into %i bytes\n", _packet.size, _writePacketBufSize);
