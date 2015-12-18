@@ -8,43 +8,27 @@
 
 #include <algorithm>
 #include <array>
+#include <cassert>
+#include <cstring>
 
 #include "ForwardingInputContext.hpp"
-
-#include "SPDIFAudioEncoder.hpp"
 #include "DigitalOutputContext.hpp"
-
-
-static AudioStreamBasicDescription GetBestInputFormatForOutputFormat(const AudioStreamBasicDescription &outFormat,
-  const AudioChannelLayoutTag outChannelLayoutTag)
-{
-  AudioStreamBasicDescription format = {};
-  format.mSampleRate = outFormat.mSampleRate;
-  format.mFormatID = kAudioFormatLinearPCM;
-  format.mFormatFlags = kAudioFormatFlagsNativeFloatPacked; // interleaved
-  format.mBytesPerPacket = 1;
-  format.mFramesPerPacket = 1;
-  format.mChannelsPerFrame = AudioChannelLayoutTag_GetNumberOfChannels(outChannelLayoutTag);
-  format.mBytesPerFrame = format.mChannelsPerFrame * sizeof (float);
-  format.mBitsPerChannel = 8 * sizeof (float);
-  return format;
-}
 
 
 ForwardingInputContext::ForwardingInputContext(AudioDeviceID device, AudioStreamID stream,
   DigitalOutputContext &outContext)
 : _device(device), _stream(stream)
-, _format(GetBestInputFormatForOutputFormat(outContext._format, outContext._channelLayoutTag)), _outContext(outContext)
-, _encoder(_format, _outContext._channelLayoutTag, _outContext._format), _deviceIOProcID(nullptr), _isRunning(false)
+, _format(outContext.GetInputFormat()), _outContext(outContext)
+, _deviceIOProcID(nullptr), _isRunning(false)
 {
   OSStatus status = AudioDeviceCreateIOProcID(_device, DeviceIOProcFunc, this, &_deviceIOProcID);
   if (status != noErr)
     throw CAHelper::CoreAudioException(status);
 
-  _planarFrames.resize(_encoder.GetNumFramesPerPacket() * _format.mChannelsPerFrame, 0.0f);
+  _planarFrames.resize(outContext.GetNumFramesPerPacket() * _format.mChannelsPerFrame, 0.0f);
   _planarInputPointers.resize(_format.mChannelsPerFrame);
   for (auto i = decltype(_format.mChannelsPerFrame){0}; i < _format.mChannelsPerFrame; ++i)
-    _planarInputPointers[i] = _planarFrames.data() + i * _encoder.GetNumFramesPerPacket();
+    _planarInputPointers[i] = _planarFrames.data() + i * outContext.GetNumFramesPerPacket();
   _numBufferedFrames = 0;
 }
 
@@ -77,7 +61,7 @@ void ForwardingInputContext::Stop()
 
 static void Deinterleave1(const uint32_t num, const float *in, uint32_t outStrideFloat, float *out)
 {
-  memcpy(out, in, num * sizeof *out);
+  std::memcpy(out, in, num * sizeof *out);
 }
 
 template <uint32_t NumChannels>
@@ -102,12 +86,13 @@ static const std::array<DeinterleaveFunc, 7> Deinterleavers = {{
   Deinterleave<6>
 }};
 
+
 OSStatus ForwardingInputContext::DeviceIOProcFunc(AudioObjectID inDevice, const AudioTimeStamp* inNow,
   const AudioBufferList* inInputData, const AudioTimeStamp* inInputTime, AudioBufferList* outOutputData,
   const AudioTimeStamp* inOutputTime, void* inClientData)
 {
   ForwardingInputContext *me = static_cast<ForwardingInputContext *>(inClientData);
-  const auto numFramesPerPacket = me->_encoder.GetNumFramesPerPacket();
+  const auto numFramesPerPacket = me->_outContext.GetNumFramesPerPacket();
   assert(inInputData->mNumberBuffers == 1);
   assert(inInputData->mBuffers[0].mNumberChannels == me->_format.mChannelsPerFrame);
   assert(me->_format.mChannelsPerFrame < Deinterleavers.size());
@@ -128,15 +113,9 @@ OSStatus ForwardingInputContext::DeviceIOProcFunc(AudioObjectID inDevice, const 
     }
     assert(me->_numBufferedFrames <= numFramesPerPacket);
     if (me->_numBufferedFrames == numFramesPerPacket)
-    { // let's encode
-      int32_t availableBytesInPackedBuffer = 0;
-      auto packedBuffer = static_cast<uint8_t *>(TPCircularBufferHead(me->_outContext.GetPacketBuffer(), &availableBytesInPackedBuffer));
-      if (packedBuffer && availableBytesInPackedBuffer >= me->_encoder.MaxBytesPerPacket)
-      {
-        const auto packedSize = me->_encoder.EncodePacket(me->_numBufferedFrames, me->_planarInputPointers.data(),
-          availableBytesInPackedBuffer, packedBuffer);
-        TPCircularBufferProduce(me->_outContext.GetPacketBuffer(), packedSize);
-      }
+    { // let's encode (greedily, on this (the input) thread
+      me->_outContext.EncodeAndAppendPacket(me->_numBufferedFrames,
+        static_cast<uint32_t>(me->_planarInputPointers.size()), me->_planarInputPointers.data());
       me->_numBufferedFrames = 0;
     }
   }

@@ -110,8 +110,11 @@ std::unique_ptr<ForwardingInputContext> _input;
   static dispatch_once_t onceToken;
   dispatch_once(&onceToken, ^
   {
+#ifdef DEBUG
     av_log_set_level(AV_LOG_VERBOSE);
-//    av_log_set_level(AV_LOG_ERROR);
+#else
+    av_log_set_level(AV_LOG_ERROR);
+#endif
     avcodec_register_all();
     av_register_all();
   });
