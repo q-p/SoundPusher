@@ -112,7 +112,8 @@ static uint64_t AudioChannelLayoutTagToAVChannelLayout(AudioChannelLayoutTag cha
 #pragma mark SPDIFAudioEncoder
 //==================================================================================================
 
-SPDIFAudioEncoder::SPDIFAudioEncoder(const AudioStreamBasicDescription &inFormat, const AudioChannelLayoutTag channelLayoutTag, const AudioStreamBasicDescription &outFormat, void *options)
+SPDIFAudioEncoder::SPDIFAudioEncoder(const AudioStreamBasicDescription &inFormat,
+  const AudioChannelLayoutTag channelLayoutTag, const AudioStreamBasicDescription &outFormat, const AVCodecID codecID)
 : _inFormat(inFormat), _outFormat(outFormat), _muxer(nullptr), _frame(nullptr), _packetBuffer(nullptr), _packet(),
   _writePacketBuf(nullptr), _writePacketBufSize(0), _numFramesPerPacket(0)
 {
@@ -245,8 +246,6 @@ uint32_t SPDIFAudioEncoder::EncodePacket(const uint32_t numFrames, const SampleT
     throw LibAVException(status);
   assert(_writePacketBuf == outBuffer + _writePacketBufSize);
   _writePacketBuf = nullptr; // don't expect another write, except through us
-
-//  printf("muxed packet of size %i into %i bytes\n", _packet.size, _writePacketBufSize);
 
 	return _writePacketBufSize;
 }

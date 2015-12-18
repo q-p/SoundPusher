@@ -19,17 +19,31 @@ extern "C" {
 struct LibAVException : std::runtime_error { LibAVException(const int error); };
 
 
+/// Takes an uncompressed, planar input format, and compresses that into the given output format with a codec.
 struct SPDIFAudioEncoder
 {
+  /// The sample type the encoder takes as input (in planar format).
   typedef float SampleT;
 
-  SPDIFAudioEncoder(const AudioStreamBasicDescription &inFormat, const AudioChannelLayoutTag channelLayoutTag, const AudioStreamBasicDescription &outFormat, void *options = nullptr);
+  /**
+   * @param inFormat Format of the input data. Must be native, planar, packed float.
+   * @param channelLayoutTag The channel layout of the input (and final compressed output) channels.
+   * @param outFormat The digital, compressed SPDIF output format to be produced by the encoder.
+   * @param codecID The libavcodec codec to use for compression.
+   */
+  SPDIFAudioEncoder(const AudioStreamBasicDescription &inFormat, const AudioChannelLayoutTag channelLayoutTag,
+    const AudioStreamBasicDescription &outFormat, const AVCodecID codecID = AV_CODEC_ID_AC3);
+
   ~SPDIFAudioEncoder();
 
+  /// @return The input format used by the encoder.
   const AudioStreamBasicDescription& GetInFormat() const { return _inFormat; }
+  /// @return The digital output format produced by the encoder.
   const AudioStreamBasicDescription& GetOutFormat() const { return _outFormat; }
+  /// @return The number of sample frames in a compressed packet.
   uint32_t GetNumFramesPerPacket() const { return _numFramesPerPacket; }
 
+  /// The maximum number of bytes in an SPDIF packet.
   static constexpr uint32_t MaxBytesPerPacket = 6144;
 
   /// Encodes the given input frames into the outBuffer.
@@ -43,8 +57,10 @@ struct SPDIFAudioEncoder
   uint32_t EncodePacket(const uint32_t numFrames, const SampleT **inputFrames, uint32_t sizeOutBuffer, uint8_t *outBuffer);
 
 protected:
+  /// The avio_write function called by the muxer to write an encoded packet.
   static int WritePacketFunc(void *opaque, uint8_t *buf, int buf_size);
 
+  /// Deleter for memory allocated with av_malloc().
   struct AVDeleter { void operator()(void *p) const { av_free(p); } };
 
   /// The input format to the encoder (i.e. what it requires).
@@ -60,8 +76,9 @@ protected:
   /// The encoded packet.
   AVPacket _packet;
 
-  /// Where WritePacketFunc() dumps its buffer and size
+  /// Where WritePacketFunc() writes its output.
   uint8_t *_writePacketBuf;
+  /// Where WritePacketFunc() takes the output buffer size from.
   uint32_t _writePacketBufSize;
 
   /// The number of input frames required to produce an output packet.
