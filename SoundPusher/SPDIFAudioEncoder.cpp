@@ -130,7 +130,7 @@ SPDIFAudioEncoder::SPDIFAudioEncoder(const AudioStreamBasicDescription &inFormat
   _muxer->pb = avio_alloc_context(buffer, MaxBytesPerPacket, 1 /* writable */, this, nullptr /* read */,
     WritePacketFunc, nullptr /* seek */);
 
-  AVStream *stream = avformat_new_stream(_muxer, avcodec_find_encoder(AV_CODEC_ID_AC3));
+  AVStream *stream = avformat_new_stream(_muxer, avcodec_find_encoder(AV_CODEC_ID_EAC3));
   assert(stream && stream->codec);
 
   AVCodecContext *coder = stream->codec;
@@ -238,7 +238,6 @@ uint32_t SPDIFAudioEncoder::EncodePacket(const uint32_t numFrames, const SampleT
   if (!got_packet)
     return 0;
 
-  const auto packetSize = _packet.size;
   _writePacketBuf = static_cast<uint8_t *>(outBuffer);
   _writePacketBufSize = sizeOutBuffer;
   status = av_write_frame(_muxer, &_packet);
@@ -247,7 +246,7 @@ uint32_t SPDIFAudioEncoder::EncodePacket(const uint32_t numFrames, const SampleT
   assert(_writePacketBuf == static_cast<uint8_t *>(outBuffer) + _writePacketBufSize);
   _writePacketBuf = nullptr; // don't expect another write, except through us
 
-//  printf("muxed packet of size %i into %i bytes\n", packetSize, _writePacketBufSize);
+//  printf("muxed packet of size %i into %i bytes\n", _packet.size, _writePacketBufSize);
 
 	return _writePacketBufSize;
 }

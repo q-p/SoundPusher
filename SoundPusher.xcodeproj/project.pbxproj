@@ -18,7 +18,6 @@
 		8ADF7A8E1C1EFE9400C4F936 /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = 8ADF7A8D1C1EFE9400C4F936 /* main.m */; };
 		8ADF7A901C1EFE9400C4F936 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8ADF7A8F1C1EFE9400C4F936 /* Assets.xcassets */; };
 		8ADF7A931C1EFE9400C4F936 /* MainMenu.xib in Resources */ = {isa = PBXBuildFile; fileRef = 8ADF7A911C1EFE9400C4F936 /* MainMenu.xib */; };
-		8ADF7A9E1C1F112D00C4F936 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8ADF7A9C1C1F110600C4F936 /* AVFoundation.framework */; };
 		8ADF7AA11C1F118400C4F936 /* CoreAudio.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8ADF7AA01C1F118400C4F936 /* CoreAudio.framework */; };
 		8ADF7AA41C1F2D1500C4F936 /* CoreAudioHelper.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 8ADF7AA21C1F2D1500C4F936 /* CoreAudioHelper.cpp */; };
 /* End PBXBuildFile section */
@@ -43,7 +42,6 @@
 		8ADF7A8F1C1EFE9400C4F936 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		8ADF7A921C1EFE9400C4F936 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/MainMenu.xib; sourceTree = "<group>"; };
 		8ADF7A941C1EFE9400C4F936 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		8ADF7A9C1C1F110600C4F936 /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
 		8ADF7AA01C1F118400C4F936 /* CoreAudio.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreAudio.framework; path = System/Library/Frameworks/CoreAudio.framework; sourceTree = SDKROOT; };
 		8ADF7AA21C1F2D1500C4F936 /* CoreAudioHelper.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = CoreAudioHelper.cpp; sourceTree = "<group>"; };
 		8ADF7AA31C1F2D1500C4F936 /* CoreAudioHelper.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = CoreAudioHelper.hpp; sourceTree = "<group>"; };
@@ -64,7 +62,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				8ADF7AA11C1F118400C4F936 /* CoreAudio.framework in Frameworks */,
-				8ADF7A9E1C1F112D00C4F936 /* AVFoundation.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -76,7 +73,6 @@
 			children = (
 				8ADF7B4E1C2016F700C4F936 /* README.md */,
 				8ADF7AA01C1F118400C4F936 /* CoreAudio.framework */,
-				8ADF7A9C1C1F110600C4F936 /* AVFoundation.framework */,
 				8A7C0D101C1DCDCF006EC2C6 /* LoopbackAudio */,
 				8ADF7A881C1EFE9400C4F936 /* SoundPusher */,
 				8A8D38EF1C1DE3B100B9A127 /* thirdparty */,
@@ -126,10 +122,6 @@
 			children = (
 				8ADF7A891C1EFE9400C4F936 /* AppDelegate.h */,
 				8ADF7A8A1C1EFE9400C4F936 /* AppDelegate.mm */,
-				8ADF7A8F1C1EFE9400C4F936 /* Assets.xcassets */,
-				8ADF7A911C1EFE9400C4F936 /* MainMenu.xib */,
-				8ADF7A941C1EFE9400C4F936 /* Info.plist */,
-				8ADF7A8C1C1EFE9400C4F936 /* Supporting Files */,
 				8ADF7AA21C1F2D1500C4F936 /* CoreAudioHelper.cpp */,
 				8ADF7AA31C1F2D1500C4F936 /* CoreAudioHelper.hpp */,
 				8A9757051C21E51800F20BD7 /* DigitalOutputContext.cpp */,
@@ -138,6 +130,10 @@
 				8A97570A1C220EDD00F20BD7 /* ForwardingInputContext.hpp */,
 				8A9757021C204EAA00F20BD7 /* SPDIFAudioEncoder.cpp */,
 				8A9757031C204EAA00F20BD7 /* SPDIFAudioEncoder.hpp */,
+				8ADF7A8F1C1EFE9400C4F936 /* Assets.xcassets */,
+				8ADF7A911C1EFE9400C4F936 /* MainMenu.xib */,
+				8ADF7A941C1EFE9400C4F936 /* Info.plist */,
+				8ADF7A8C1C1EFE9400C4F936 /* Supporting Files */,
 			);
 			path = SoundPusher;
 			sourceTree = "<group>";
@@ -203,7 +199,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 8A7C0D071C1DB801006EC2C6 /* Build configuration list for PBXProject "VirtualSound" */;
+			buildConfigurationList = 8A7C0D071C1DB801006EC2C6 /* Build configuration list for PBXProject "SoundPusher" */;
 			compatibilityVersion = "Xcode 3.2";
 			developmentRegion = English;
 			hasScannedForEncodings = 0;
@@ -493,7 +489,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		8A7C0D071C1DB801006EC2C6 /* Build configuration list for PBXProject "VirtualSound" */ = {
+		8A7C0D071C1DB801006EC2C6 /* Build configuration list for PBXProject "SoundPusher" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				8A7C0D081C1DB801006EC2C6 /* Debug */,

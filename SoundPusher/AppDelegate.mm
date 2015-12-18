@@ -20,7 +20,6 @@ extern "C" {
 #include "ForwardingInputContext.hpp"
 
 #import "AppDelegate.h"
-#import "AVFoundation/AVFoundation.h"
 
 @interface AppDelegate ()
 @property (weak) IBOutlet NSWindow *window;
@@ -138,8 +137,8 @@ std::unique_ptr<ForwardingInputContext> _input;
         NSLog(@"  Stream: %u", stream.streamID);
         for (const auto &format : stream.formats)
         {
-          AVAudioFormat *avFormat = [[AVAudioFormat alloc] initWithStreamDescription:&format];
-          NSLog(@"    Format: %@", avFormat);
+//          AVAudioFormat *avFormat = [[AVAudioFormat alloc] initWithStreamDescription:&format];
+//          NSLog(@"    Format: %@", avFormat);
         }
       }
     }
@@ -153,12 +152,12 @@ std::unique_ptr<ForwardingInputContext> _input;
     }
     catch (const std::exception &e)
     {
-      NSLog(@"Could not initialize output context for device %u stream %u format %@", device.deviceID, stream.streamID, [[AVAudioFormat alloc] initWithStreamDescription:&format]);
+//      NSLog(@"Could not initialize output context for device %u stream %u format %@", device.deviceID, stream.streamID, [[AVAudioFormat alloc] initWithStreamDescription:&format]);
     }
   }
   if (!_output)
     return;
-  NSLog(@"Output context initialized for device %u stream %u format %@", _output->_device, _output->_stream, [[AVAudioFormat alloc] initWithStreamDescription:&_output->_format]);
+//  NSLog(@"Output context initialized for device %u stream %u format %@", _output->_device, _output->_stream, [[AVAudioFormat alloc] initWithStreamDescription:&_output->_format]);
 
 
   { // set up output
