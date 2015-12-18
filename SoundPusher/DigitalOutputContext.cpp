@@ -79,14 +79,19 @@ OSStatus DigitalOutputContext::DeviceIOProcFunc(AudioObjectID inDevice, const Au
 
   int32_t availableBytes = 0;
   auto buffer = static_cast<uint8_t *>(TPCircularBufferTail(&me->_packetBuffer, &availableBytes));
-  if (availableBytes > me->_format.mBytesPerPacket)
+  if (availableBytes >= me->_format.mBytesPerPacket)
   {
+    int32_t numConsumed = me->_format.mBytesPerPacket * (availableBytes / me->_format.mBytesPerPacket);
+    if (numConsumed > me->_format.mBytesPerPacket)
+      printf("consumed extra packet (%i in total, one is %i)\n", numConsumed, me->_format.mBytesPerPacket);
+    buffer += numConsumed - me->_format.mBytesPerPacket; // grab the newest packet
     memcpy(outOutputData->mBuffers[0].mData, buffer, outOutputData->mBuffers[0].mDataByteSize);
-    // note: we always remove a whole packet, even if the request is for less
-    TPCircularBufferConsume(&me->_packetBuffer, me->_format.mBytesPerPacket);
+    // note: we always consume whole packet(s), even if the request is for less
+    TPCircularBufferConsume(&me->_packetBuffer, numConsumed);
   }
   else
   { // provide silence
+    printf("silence (%u avail)\n", availableBytes);
     memcpy(outOutputData->mBuffers[0].mData, me->_encodedSilence.data(), outOutputData->mBuffers[0].mDataByteSize);
   }
   return noErr;
