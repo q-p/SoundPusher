@@ -16,11 +16,10 @@
 
 //	System Includes
 #include <CoreAudio/AudioServerPlugIn.h>
-#include <dispatch/dispatch.h>
 #include <mach/mach_time.h>
 #include <pthread.h>
 #include <stdint.h>
-#include <sys/syslog.h>
+//#include <stdatomic.h>
 
 #include "LoopbackAudio.h"
 #include "TPCircularBuffer.h"
@@ -31,6 +30,7 @@
 //==================================================================================================
 
 #if DEBUG
+	#include <sys/syslog.h>
 
 	#define	DebugMsg(inFormat, ...)	syslog(LOG_NOTICE, inFormat, ## __VA_ARGS__)
 
@@ -99,14 +99,13 @@ enum
 	kMaxSupportedChannels		= 6,
 	kNumSupportedSampleRates	= 3,
 
-	kDevice_NumWarmupCycles		= 2,
-
-	// The size of the imaginary ring-buffer used purely for timing purposes
+	// The size of the imaginary ring-buffer used purely for timing purposes (but which has an impact on
+	// what IO size CoreAudio chooses)
 	kDevice_NumZeroFrames	    = 2048,
 
 	// The size of the *actual* ring-buffer containing buffered output data to provide as input
 	// The size of this is independent of the imaginary hardware ring-buffer providing zero time-stamps
-	kDevice_RingBuffSize		= 4096 * sizeof(float) * kMaxSupportedChannels, // space for 4096 frames of 6 channels * float};
+	kDevice_RingBuffSize		= kDevice_NumZeroFrames * sizeof(float) * kMaxSupportedChannels,
 };
 
 static const Float64 kSupportedSampleRates[kNumSupportedSampleRates] = {32000.0, 44100.0, 48000.0};
@@ -121,24 +120,23 @@ static pthread_mutex_t			gPlugIn_StateMutex				= PTHREAD_MUTEX_INITIALIZER;
 static UInt32					gPlugIn_RefCount				= 0;
 static AudioServerPlugInHostRef	gPlugIn_Host					= NULL;
 
-#define							kDevice_ModelUID				"de.maven.audio.LoopbackDevice_ModelUID"
-static pthread_mutex_t			gDevice_IOMutex					= PTHREAD_MUTEX_INITIALIZER;
+//static pthread_mutex_t			gDevice_IOMutex					= PTHREAD_MUTEX_INITIALIZER;
 
-static AudioStreamBasicDescription gDevice_CurrentFormat = {
-	48000.0, // SampleRate
-	kAudioFormatLinearPCM, // FormatID
-	kAudioFormatFlagsNativeFloatPacked, // FormatFlags
-	sizeof(float) * 2 /*kMaxSupportedChannels*/, // BytesPerPacket
-	1, // FramesPerPacket
-	sizeof(float) * 2 /*kMaxSupportedChannels*/, // BytesPerFrame
-	2 /*6*/, // ChannelsPerFrame
-	sizeof(float) * 8, // BitsPerChannel
-	0, // Reserved
-};
 static AudioChannelLayout		gDevice_CurrentChannelLayout = {
 	kAudioChannelLayoutTag_MPEG_5_1_C, // ChannelLayoutTag
 	0, // ChannelBitmap
 	0, // NumberChannelDescriptions
+};
+static AudioStreamBasicDescription gDevice_CurrentFormat = {
+	48000.0, // SampleRate
+	kAudioFormatLinearPCM,
+	kAudioFormatFlagsNativeFloatPacked,
+	sizeof(float) * 6 /* channels */, // BytesPerPacket
+	1, // FramesPerPacket
+	sizeof(float) * 6 /* channels */, // BytesPerFrame
+	6, // ChannelsPerFrame
+	sizeof(float) * 8, // BitsPerChannel
+	0, // Reserved
 };
 
 static UInt32					gDevice_IOIsRunning				= 0;
@@ -149,8 +147,10 @@ static Float64					gDevice_AnchorSampleTime		= 0.0;
 static UInt64					gDevice_AnchorHostTime			= 0;
 static UInt64					gDevice_TimeLineSeed			= 1;
 
+// We only use the TPCircularBuffer for it's memory-mapping trickery, and write / read from our computed positions without consuming / producing
 static TPCircularBuffer			gDevice_RingBuffer;
-static UInt32					gDevice_NumWarmupCycles			= 0;
+
+//static atomic_uint_fast32_t		gDevice_LastWriteEnd			= 0;
 
 static bool						gStream_Input_IsActive			= true;
 static bool						gStream_Output_IsActive			= true;
@@ -1118,8 +1118,8 @@ static Boolean	LoopbackAudio_HasDeviceProperty(AudioServerPlugInDriverRef inDriv
 			
 		case kAudioDevicePropertyDeviceCanBeDefaultDevice:
 		case kAudioDevicePropertyDeviceCanBeDefaultSystemDevice:
-		case kAudioDevicePropertyLatency:
-		case kAudioDevicePropertySafetyOffset:
+//		case kAudioDevicePropertyLatency:
+//		case kAudioDevicePropertySafetyOffset:
 		case kAudioDevicePropertyPreferredChannelsForStereo:
 		case kAudioDevicePropertyPreferredChannelLayout:
 			theAnswer = ((inAddress->mScope == kAudioObjectPropertyScopeInput) || (inAddress->mScope == kAudioObjectPropertyScopeOutput)) && (inAddress->mElement == kAudioObjectPropertyElementMaster);
@@ -1574,6 +1574,8 @@ static OSStatus	LoopbackAudio_GetDevicePropertyData(AudioServerPlugInDriverRef i
 			//	device, the value is 0 due to the fact that it always vends silence.
 			FailWithAction(inDataSize < sizeof(UInt32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetDevicePropertyData: not enough space for the return value of kAudioDevicePropertyLatency for the device");
 			*((UInt32*)outData) = 0; // FIXME frame-size?
+//			if (inAddress->mScope == kAudioObjectPropertyScopeOutput)
+//				*((UInt32*)outData) = 1536; // frame-size?
 			*outDataSize = sizeof(UInt32);
 			break;
 
@@ -1658,7 +1660,7 @@ static OSStatus	LoopbackAudio_GetDevicePropertyData(AudioServerPlugInDriverRef i
 			//	This property returns the how close to now the HAL can read and write. For
 			//	this, device, the value is 0 due to the fact that it always vends silence.
 			FailWithAction(inDataSize < sizeof(UInt32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetDevicePropertyData: not enough space for the return value of kAudioDevicePropertySafetyOffset for the device");
-			*((UInt32*)outData) = 10; // FIXME why?
+			*((UInt32*)outData) = 0;
 			*outDataSize = sizeof(UInt32);
 			break;
 
@@ -2090,8 +2092,8 @@ static OSStatus	LoopbackAudio_GetStreamPropertyData(AudioServerPlugInDriverRef i
 			//	such as a speaker or headphones, or a microphone. Values for this property
 			//	are defined in <CoreAudio/AudioHardwareBase.h>
 			FailWithAction(inDataSize < sizeof(UInt32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetStreamPropertyData: not enough space for the return value of kAudioStreamPropertyTerminalType for the stream");
-			*((UInt32*)outData) = (inObjectID == kObjectID_Stream_Input) ? kAudioStreamTerminalTypeMicrophone : kAudioStreamTerminalTypeSpeaker;
-//			*((UInt32*)outData) = (inObjectID == kObjectID_Stream_Input) ? kAudioStreamTerminalTypeDigitalAudioInterface : kAudioStreamTerminalTypeDigitalAudioInterface;
+//			*((UInt32*)outData) = (inObjectID == kObjectID_Stream_Input) ? kAudioStreamTerminalTypeMicrophone : kAudioStreamTerminalTypeSpeaker;
+			*((UInt32*)outData) = (inObjectID == kObjectID_Stream_Input) ? kAudioStreamTerminalTypeDigitalAudioInterface : kAudioStreamTerminalTypeDigitalAudioInterface;
 			*outDataSize = sizeof(UInt32);
 			break;
 
@@ -2605,11 +2607,12 @@ static OSStatus	LoopbackAudio_StartIO(AudioServerPlugInDriverRef inDriver, Audio
 	{
 		//	We need to start the hardware, which in this case is just anchoring the time line.
 		TPCircularBufferInit(&gDevice_RingBuffer, kDevice_RingBuffSize);
-		gDevice_NumWarmupCycles = 0;
+		memset(gDevice_RingBuffer.buffer, 0, gDevice_RingBuffer.length);
 
 		gDevice_TimeLineSeed = 1;
 		gDevice_NumberTimeStamps = 0;
 		gDevice_AnchorSampleTime = 0;
+//		atomic_store_explicit(&gDevice_LastWriteEnd, 0, memory_order_relaxed);
 		gDevice_AnchorHostTime = mach_absolute_time();
 
 		gDevice_IOIsRunning = 1;
@@ -2694,8 +2697,8 @@ static OSStatus	LoopbackAudio_GetZeroTimeStamp(AudioServerPlugInDriverRef inDriv
 	FailWithAction(inDeviceObjectID != kObjectID_Device, theAnswer = kAudioHardwareBadObjectError, Done, "LoopbackAudio_GetZeroTimeStamp: bad device ID");
 
 	//	we need to hold the locks
-	pthread_mutex_lock(&gDevice_IOMutex);
-	
+//	pthread_mutex_lock(&gDevice_IOMutex);
+
 	//	get the current host time
 	theCurrentHostTime = mach_absolute_time();
 	
@@ -2709,15 +2712,15 @@ static OSStatus	LoopbackAudio_GetZeroTimeStamp(AudioServerPlugInDriverRef inDriv
 	{
 		++gDevice_NumberTimeStamps;
 	}
-	
+
 	//	set the return values
 	*outSampleTime = gDevice_NumberTimeStamps * kDevice_NumZeroFrames;
 	*outHostTime = gDevice_AnchorHostTime + (((Float64)gDevice_NumberTimeStamps) * theHostTicksPerRingBuffer);
 	*outSeed = gDevice_TimeLineSeed;
 
 	//	unlock the state lock
-	pthread_mutex_unlock(&gDevice_IOMutex);
-	
+//	pthread_mutex_unlock(&gDevice_IOMutex);
+
 Done:
 	return theAnswer;
 }
@@ -2769,8 +2772,7 @@ Done:
 
 static OSStatus	LoopbackAudio_BeginIOOperation(AudioServerPlugInDriverRef inDriver, AudioObjectID inDeviceObjectID, UInt32 inClientID, UInt32 inOperationID, UInt32 inIOBufferFrameSize, const AudioServerPlugInIOCycleInfo* inIOCycleInfo)
 {
-	//	This is called at the beginning of an IO operation. This device doesn't do anything, so just
-	//	check the arguments and return.
+	//	This is called at the beginning of an IO operation.
 	
 	#pragma unused(inClientID, inOperationID, inIOBufferFrameSize, inIOCycleInfo)
 	
@@ -2793,64 +2795,38 @@ static OSStatus	LoopbackAudio_DoIOOperation(AudioServerPlugInDriverRef inDriver,
 	
 	//	declare the local variables
 	OSStatus theAnswer = 0;
-	int32_t availableBytes;
-	void *bufferPointer;
 
 	//	check the arguments
 	FailWithAction(inDriver != gAudioServerPlugInDriverRef, theAnswer = kAudioHardwareBadObjectError, Done, "LoopbackAudio_DoIOOperation: bad driver reference");
 	FailWithAction(inDeviceObjectID != kObjectID_Device, theAnswer = kAudioHardwareBadObjectError, Done, "LoopbackAudio_DoIOOperation: bad device ID");
 	FailWithAction((inStreamObjectID != kObjectID_Stream_Input) && (inStreamObjectID != kObjectID_Stream_Output), theAnswer = kAudioHardwareBadObjectError, Done, "LoopbackAudio_DoIOOperation: bad stream ID");
 
+	// In cycle 1, the HAL first does a ReadInput (for ~mNominalIOBufferFrameSize frames) at time t0, followed by a WriteMix at t0 + 2 * mNominalIOBufferFrameSize
+	// By reading from t0 + NominalIOBufferFrameSize, we'll pick up the previous cycle's WriteMix data (which is as current as possible)
+	const UInt32 numFramesInRingBuffer = gDevice_RingBuffer.length / gDevice_CurrentFormat.mBytesPerFrame;
+
 	switch(inOperationID)
 	{
 		case kAudioServerPlugInIOOperationReadInput:
 		{ // provide input from our internal buffer
-			if (gDevice_NumWarmupCycles < kDevice_NumWarmupCycles)
-			{
-				DebugMsg("LoopbackAudio_ReadInput(warmup %i): zeroing %i bytes (= %i frames) time: %f\n", gDevice_NumWarmupCycles, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame, inIOBufferFrameSize, inIOCycleInfo->mInputTime.mSampleTime);
-				memset(ioMainBuffer, 0, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame);
-			}
-			else
-			{
-				bufferPointer = TPCircularBufferTail(&gDevice_RingBuffer, &availableBytes);
-				if (availableBytes > 2 * inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame)
-				{ // we try not to let our buffer get too full (maybe there's no consumer), so consume some old data to keep latency low
-					const int32_t numDrop = availableBytes - 2 * inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame;
-//					DebugMsg("LoopbackAudio_ReadInput(high-water): available bytes: %i requested bytes: %i (= %i frames) time: %f dropping: %i\n", availableBytes, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame, inIOBufferFrameSize, inIOCycleInfo->mInputTime.mSampleTime, numDrop);
-					TPCircularBufferConsume(&gDevice_RingBuffer, numDrop);
-					availableBytes -= numDrop;
-				}
+			const UInt32 sampleIndex = ((SInt64)inIOCycleInfo->mInputTime.mSampleTime + inIOCycleInfo->mNominalIOBufferFrameSize) % numFramesInRingBuffer;
+			const uint8_t *bufferStart = gDevice_RingBuffer.buffer + sampleIndex * gDevice_CurrentFormat.mBytesPerFrame;
+//			const UInt32 lastWriteEnd = atomic_load_explicit(&gDevice_LastWriteEnd, memory_order_acquire);
 
-				if (availableBytes >= inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame)
-				{
-					memcpy(ioMainBuffer, bufferPointer, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame);
-					TPCircularBufferConsume(&gDevice_RingBuffer, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame);
-				}
-				else
-				{ // not enough data available, buffer up some
-					DebugMsg("LoopbackAudio_ReadInput(low-water): available bytes: %i requested bytes: %i (= %i frames) time: %f\n", availableBytes, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame, inIOBufferFrameSize, inIOCycleInfo->mInputTime.mSampleTime);
-					memset(ioMainBuffer, 0, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame);
-					--gDevice_NumWarmupCycles; // buffer once more
-					++gDevice_TimeLineSeed; // and resync the time-line
-				}
-			}
+//			if (sampleIndex + inIOBufferFrameSize > lastWriteEnd)
+//				DebugMsg("LoopbackAudio_ReadInput: reading %i frames from sampleIndex %i, but lastWriteEnd %u\n", inIOBufferFrameSize, sampleIndex, lastWriteEnd);
+
+			memcpy(ioMainBuffer, bufferStart, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame);
+//			DebugMsg("LoopbackAudio_ReadInput: reading %i frames from sampleIndex %i\n", inIOBufferFrameSize, sampleIndex);
 			break;
 		}
 		case kAudioServerPlugInIOOperationWriteMix:
 		{ // write input to our internal buffer
-			bufferPointer = TPCircularBufferHead(&gDevice_RingBuffer, &availableBytes);
-			if (gMute_Output_Master_Value)
-				memset(ioMainBuffer, 0, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame);
-			else
-			{
-				if (availableBytes < inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame)
-				{ // not enough space for all the data (e.g. because there is no reader)
-//					DebugMsg("LoopbackAudio_WriteMix(high-water): available bytes: %i requested bytes: %i (= %i frames) time: %f\n", availableBytes, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame, inIOBufferFrameSize, inIOCycleInfo->mOutputTime.mSampleTime);
-				}
-				TPCircularBufferProduceBytes(&gDevice_RingBuffer, ioMainBuffer, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame);
-			}
-			if (gDevice_NumWarmupCycles < kDevice_NumWarmupCycles)
-				++gDevice_NumWarmupCycles;
+			const UInt32 sampleIndex = ((SInt64)inIOCycleInfo->mOutputTime.mSampleTime) % numFramesInRingBuffer;
+			uint8_t *bufferStart = gDevice_RingBuffer.buffer + sampleIndex * gDevice_CurrentFormat.mBytesPerFrame;
+			memcpy(bufferStart, ioMainBuffer, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame);
+//			atomic_store_explicit(&gDevice_LastWriteEnd, sampleIndex + inIOBufferFrameSize, memory_order_release);
+//			DebugMsg("LoopbackAudio_WriteMix: writing %i frames to sampleIndex %i\n", inIOBufferFrameSize, sampleIndex);
 			break;
 		}
 	}
