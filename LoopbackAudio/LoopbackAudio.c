@@ -2827,19 +2827,17 @@ static OSStatus	LoopbackAudio_DoIOOperation(AudioServerPlugInDriverRef inDriver,
 	{
 		case kAudioServerPlugInIOOperationReadInput:
 		{ // provide input from our internal buffer
-			// In cycle 1, the HAL first does a ReadInput (for ~mNominalIOBufferFrameSize frames) at time t0, followed by a WriteMix at t0 + 2 * mNominalIOBufferFrameSize
-			// By reading from t0 + NominalIOBufferFrameSize, we'll pick up the previous cycle's WriteMix data (which is as current as possible)
-			const UInt32 readBegin = ((SInt64)inIOCycleInfo->mInputTime.mSampleTime + inIOCycleInfo->mNominalIOBufferFrameSize) % numFramesInRingBuffer;
+			// read back from where we last wrote
+			const UInt32 readBegin = (numFramesInRingBuffer + gDevice_LastWriteEnd - inIOBufferFrameSize) % numFramesInRingBuffer;
+//			const UInt32 readBegin = ((SInt64)inIOCycleInfo->mInputTime.mSampleTime + inIOCycleInfo->mNominalIOBufferFrameSize) % numFramesInRingBuffer;
 			const UInt32 readEnd = (readBegin + inIOBufferFrameSize) % numFramesInRingBuffer;
-			const uint8_t *bufferBegin = gDevice_RingBuffer.buffer + readBegin * gDevice_CurrentFormat.mBytesPerFrame;
+			uint8_t *bufferBegin = gDevice_RingBuffer.buffer + readBegin * gDevice_CurrentFormat.mBytesPerFrame;
 
-			const UInt32 writeEnd = gDevice_LastWriteEnd >= readEnd ? gDevice_LastWriteEnd : gDevice_LastWriteEnd + numFramesInRingBuffer;
-
-			if (writeEnd - readEnd >= numFramesInRingBuffer / 2)
-			{
-				DebugMsg("LoopbackAudio_ReadInput: reading %i frames from sampleIndex %i, but lastWriteEnd %u\n", inIOBufferFrameSize, readBegin, gDevice_LastWriteEnd);
-//				++gDevice_TimeLineSeed;
-			}
+//			if (writeEnd - readEnd >= numFramesInRingBuffer / 2)
+//			{
+//				DebugMsg("LoopbackAudio_ReadInput: reading %i frames from sampleIndex %i, but lastWriteEnd %u, adjusted to %u\n", inIOBufferFrameSize, readBegin, gDevice_LastWriteEnd, readBeginAdjusted);
+//				bufferBegin = gDevice_RingBuffer.buffer + readBeginAdjusted * gDevice_CurrentFormat.mBytesPerFrame;
+//			}
 
 			memcpy(ioMainBuffer, bufferBegin, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame);
 			break;
