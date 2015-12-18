@@ -14,12 +14,13 @@
 //	Includes
 //==================================================================================================
 
+#include <stdint.h>
+
 //	System Includes
 #include <CoreAudio/AudioServerPlugIn.h>
 #include <mach/mach_time.h>
 #include <pthread.h>
-#include <stdint.h>
-//#include <stdatomic.h>
+#include <libkern/OSAtomic.h>
 
 #include "LoopbackAudio.h"
 #include "TPCircularBuffer.h"
@@ -28,6 +29,11 @@
 #pragma mark -
 #pragma mark Macros
 //==================================================================================================
+
+// Whether we allow multiple formats for the device that can be switched between. This may be
+// interesting when we change the output format to one that best matches the input format for our
+// selected encoder
+//#define ALLOW_MULTIPLE_FORMATS
 
 #if DEBUG
 	#include <sys/syslog.h>
@@ -94,33 +100,35 @@ enum
 //	kChangeRequest_ChannelLayout		= 2,
 };
 
+#ifdef ALLOW_MULTIPLE_FORMATS
+static const Float64 kSupportedSampleRates[] = {32000.0, 44100.0, 48000.0};
+static const UInt32 kSupportedNumChannels[] = {1u, 2u, 3u, 4u, 5u, 6u};
+#else
+static const Float64 kSupportedSampleRates[] = {48000.0};
+static const UInt32 kSupportedNumChannels[] = {6u};
+#endif
+
 enum
 {
-	kMaxSupportedChannels		= 6,
-	kNumSupportedSampleRates	= 3,
+	kNumSupportedChannels		= sizeof kSupportedNumChannels / sizeof *kSupportedNumChannels,
+	kNumSupportedSampleRates	= sizeof kSupportedSampleRates / sizeof *kSupportedSampleRates,
 
 	// The size of the imaginary ring-buffer used purely for timing purposes (but which has an impact on
 	// what IO size CoreAudio chooses)
 	kDevice_NumZeroFrames	    = 2048,
 
-	// The size of the *actual* ring-buffer containing buffered output data to provide as input
+	// The size of the *actual* ring-buffer in frames
 	// The size of this is independent of the imaginary hardware ring-buffer providing zero time-stamps
-	kDevice_RingBuffSize		= kDevice_NumZeroFrames * sizeof(float) * kMaxSupportedChannels,
+	kDevice_RingBuffNumFrames	= kDevice_NumZeroFrames,
 };
-
-static const Float64 kSupportedSampleRates[kNumSupportedSampleRates] = {32000.0, 44100.0, 48000.0};
 
 //	Declare the stuff that tracks the state of the plug-in, the device and its sub-objects.
 //	Note that we use global variables here because this driver only ever has a single device. If
 //	multiple devices were supported, this state would need to be encapsulated in one or more structs
 //	so that each object's state can be tracked individually.
-//	Note also that we share a single mutex across all objects to be thread safe for the same reason.
 #define							kPlugIn_BundleID				"de.maven.audio.LoopbackAudio"
-static pthread_mutex_t			gPlugIn_StateMutex				= PTHREAD_MUTEX_INITIALIZER;
 static UInt32					gPlugIn_RefCount				= 0;
 static AudioServerPlugInHostRef	gPlugIn_Host					= NULL;
-
-//static pthread_mutex_t			gDevice_IOMutex					= PTHREAD_MUTEX_INITIALIZER;
 
 static AudioChannelLayout		gDevice_CurrentChannelLayout = {
 	kAudioChannelLayoutTag_MPEG_5_1_C, // ChannelLayoutTag
@@ -139,6 +147,11 @@ static AudioStreamBasicDescription gDevice_CurrentFormat = {
 	0, // Reserved
 };
 
+// Used for everything else (and may be held for longer)
+static pthread_mutex_t			gPlugIn_StateMutex				= PTHREAD_MUTEX_INITIALIZER;
+// Used for the IO operations (essentially the buffer) and GetZeroTimeStamp
+static volatile OSSpinLock		gDevice_SpinLock				= OS_SPINLOCK_INIT;
+
 static UInt32					gDevice_IOIsRunning				= 0;
 
 static Float64					gDevice_HostTicksPerFrame		= 0.0;
@@ -147,10 +160,11 @@ static Float64					gDevice_AnchorSampleTime		= 0.0;
 static UInt64					gDevice_AnchorHostTime			= 0;
 static UInt64					gDevice_TimeLineSeed			= 1;
 
-// We only use the TPCircularBuffer for it's memory-mapping trickery, and write / read from our computed positions without consuming / producing
+// We only use the TPCircularBuffer for it's memory-mapping trickery, and write / read from our
+// computed positions without consuming / producing
 static TPCircularBuffer			gDevice_RingBuffer;
 
-//static atomic_uint_fast32_t		gDevice_LastWriteEnd			= 0;
+uint32_t						gDevice_LastWriteEnd			= 0;
 
 static bool						gStream_Input_IsActive			= true;
 static bool						gStream_Output_IsActive			= true;
@@ -2009,7 +2023,7 @@ static OSStatus	LoopbackAudio_GetStreamPropertyDataSize(AudioServerPlugInDriverR
 
 		case kAudioStreamPropertyAvailableVirtualFormats:
 		case kAudioStreamPropertyAvailablePhysicalFormats:
-			*outDataSize = kMaxSupportedChannels * kNumSupportedSampleRates * sizeof(AudioStreamRangedDescription);
+			*outDataSize = kNumSupportedChannels * kNumSupportedSampleRates * sizeof(AudioStreamRangedDescription);
 			break;
 
 		default:
@@ -2137,29 +2151,29 @@ static OSStatus	LoopbackAudio_GetStreamPropertyData(AudioServerPlugInDriverRef i
 			//	number is allowed to be smaller than the actual size of the list. In such
 			//	case, only that number of items will be returned
 			theNumberItemsToFetch = inDataSize / sizeof(AudioStreamRangedDescription);
-			
+
 			//	clamp it to the number of items we have
-			if(theNumberItemsToFetch > kNumSupportedSampleRates * kMaxSupportedChannels)
+			if(theNumberItemsToFetch > kNumSupportedSampleRates * kNumSupportedChannels)
 			{
-				theNumberItemsToFetch = kNumSupportedSampleRates * kMaxSupportedChannels;
+				theNumberItemsToFetch = kNumSupportedSampleRates * kNumSupportedChannels;
 			}
 			
 			//	fill out the return array
 			for (unsigned i = 0; i < theNumberItemsToFetch; i++)
 			{
-				const unsigned numChannels = (i / kNumSupportedSampleRates) + 1;
+				const unsigned numChannels = kSupportedNumChannels[i / kNumSupportedSampleRates];
 				const unsigned sampleRateIndex = i % kNumSupportedSampleRates;
+				AudioStreamRangedDescription *outDesc = (AudioStreamRangedDescription *)outData + i;
 				
-				((AudioStreamRangedDescription *)outData)[i].mFormat.mSampleRate = kSupportedSampleRates[sampleRateIndex];
-				((AudioStreamRangedDescription *)outData)[i].mFormat.mFormatID = kAudioFormatLinearPCM;
-				((AudioStreamRangedDescription *)outData)[i].mFormat.mFormatFlags = kAudioFormatFlagsNativeFloatPacked;
-				((AudioStreamRangedDescription *)outData)[i].mFormat.mBitsPerChannel = sizeof(float) * 8;
-				((AudioStreamRangedDescription *)outData)[i].mFormat.mChannelsPerFrame = numChannels;
-				((AudioStreamRangedDescription *)outData)[i].mFormat.mBytesPerFrame = numChannels * sizeof(float);
-				((AudioStreamRangedDescription *)outData)[i].mFormat.mFramesPerPacket = 1;
-				((AudioStreamRangedDescription *)outData)[i].mFormat.mBytesPerPacket = numChannels * sizeof(float);
-				((AudioStreamRangedDescription *)outData)[i].mSampleRateRange.mMinimum = kSupportedSampleRates[sampleRateIndex];
-				((AudioStreamRangedDescription *)outData)[i].mSampleRateRange.mMaximum = kSupportedSampleRates[sampleRateIndex];
+				outDesc->mFormat.mFormatID = kAudioFormatLinearPCM;
+				outDesc->mFormat.mFormatFlags = kAudioFormatFlagsNativeFloatPacked;
+				outDesc->mFormat.mBitsPerChannel = sizeof(float) * 8;
+				outDesc->mFormat.mChannelsPerFrame = numChannels;
+				outDesc->mFormat.mBytesPerFrame = numChannels * sizeof(float);
+				outDesc->mFormat.mFramesPerPacket = 1;
+				outDesc->mFormat.mBytesPerPacket = numChannels * sizeof(float);
+				outDesc->mSampleRateRange.mMinimum = kSupportedSampleRates[sampleRateIndex];
+				outDesc->mSampleRateRange.mMaximum = kSupportedSampleRates[sampleRateIndex];
 			}
 
 			//	report how much we wrote
@@ -2243,7 +2257,12 @@ static OSStatus	LoopbackAudio_SetStreamPropertyData(AudioServerPlugInDriverRef i
 			FailWithAction(newAudioFormat->mBytesPerPacket != sizeof(float) * newAudioFormat->mChannelsPerFrame, theAnswer = kAudioDeviceUnsupportedFormatError, Done, "Loopback_SetStreamPropertyData: unsupported bytes per packet for kAudioStreamPropertyPhysicalFormat");
 			FailWithAction(newAudioFormat->mFramesPerPacket != 1, theAnswer = kAudioDeviceUnsupportedFormatError, Done, "Loopback_SetStreamPropertyData: unsupported frames per packet for kAudioStreamPropertyPhysicalFormat");
 			FailWithAction(newAudioFormat->mBytesPerFrame != newAudioFormat->mFramesPerPacket * newAudioFormat->mBytesPerPacket, theAnswer = kAudioDeviceUnsupportedFormatError, Done, "Loopback_SetStreamPropertyData: unsupported bytes per frame for kAudioStreamPropertyPhysicalFormat");
-			FailWithAction(newAudioFormat->mChannelsPerFrame < 1 || newAudioFormat->mChannelsPerFrame > kMaxSupportedChannels, theAnswer = kAudioDeviceUnsupportedFormatError, Done, "Loopback_SetStreamPropertyData: unsupported channels per frame for kAudioStreamPropertyPhysicalFormat");
+
+			for (i = 0; i < kNumSupportedChannels; i++)
+				if (newAudioFormat->mChannelsPerFrame == kSupportedNumChannels[i])
+					break;
+			FailWithAction(i == kNumSupportedChannels, theAnswer = kAudioHardwareIllegalOperationError, Done, "Loopback_SetStreamPropertyData: unsupported number of channels for kAudioStreamPropertyPhysicalFormat");
+
 			for (i = 0; i < kNumSupportedSampleRates; i++)
 				if (newAudioFormat->mSampleRate == kSupportedSampleRates[i])
 					break;
@@ -2606,13 +2625,12 @@ static OSStatus	LoopbackAudio_StartIO(AudioServerPlugInDriverRef inDriver, Audio
 	else if(gDevice_IOIsRunning == 0)
 	{
 		//	We need to start the hardware, which in this case is just anchoring the time line.
-		TPCircularBufferInit(&gDevice_RingBuffer, kDevice_RingBuffSize);
+		TPCircularBufferInit(&gDevice_RingBuffer, kDevice_RingBuffNumFrames * gDevice_CurrentFormat.mBytesPerFrame);
 		memset(gDevice_RingBuffer.buffer, 0, gDevice_RingBuffer.length);
 
 		gDevice_TimeLineSeed = 1;
 		gDevice_NumberTimeStamps = 0;
 		gDevice_AnchorSampleTime = 0;
-//		atomic_store_explicit(&gDevice_LastWriteEnd, 0, memory_order_relaxed);
 		gDevice_AnchorHostTime = mach_absolute_time();
 
 		gDevice_IOIsRunning = 1;
@@ -2696,8 +2714,8 @@ static OSStatus	LoopbackAudio_GetZeroTimeStamp(AudioServerPlugInDriverRef inDriv
 	FailWithAction(inDriver != gAudioServerPlugInDriverRef, theAnswer = kAudioHardwareBadObjectError, Done, "LoopbackAudio_GetZeroTimeStamp: bad driver reference");
 	FailWithAction(inDeviceObjectID != kObjectID_Device, theAnswer = kAudioHardwareBadObjectError, Done, "LoopbackAudio_GetZeroTimeStamp: bad device ID");
 
-	//	we need to hold the locks
-//	pthread_mutex_lock(&gDevice_IOMutex);
+	//	we need to hold the lock
+	OSSpinLockLock(&gDevice_SpinLock);
 
 	//	get the current host time
 	theCurrentHostTime = mach_absolute_time();
@@ -2719,7 +2737,7 @@ static OSStatus	LoopbackAudio_GetZeroTimeStamp(AudioServerPlugInDriverRef inDriv
 	*outSeed = gDevice_TimeLineSeed;
 
 	//	unlock the state lock
-//	pthread_mutex_unlock(&gDevice_IOMutex);
+	OSSpinLockUnlock(&gDevice_SpinLock);
 
 Done:
 	return theAnswer;
@@ -2801,35 +2819,43 @@ static OSStatus	LoopbackAudio_DoIOOperation(AudioServerPlugInDriverRef inDriver,
 	FailWithAction(inDeviceObjectID != kObjectID_Device, theAnswer = kAudioHardwareBadObjectError, Done, "LoopbackAudio_DoIOOperation: bad device ID");
 	FailWithAction((inStreamObjectID != kObjectID_Stream_Input) && (inStreamObjectID != kObjectID_Stream_Output), theAnswer = kAudioHardwareBadObjectError, Done, "LoopbackAudio_DoIOOperation: bad stream ID");
 
-	// In cycle 1, the HAL first does a ReadInput (for ~mNominalIOBufferFrameSize frames) at time t0, followed by a WriteMix at t0 + 2 * mNominalIOBufferFrameSize
-	// By reading from t0 + NominalIOBufferFrameSize, we'll pick up the previous cycle's WriteMix data (which is as current as possible)
+	OSSpinLockLock(&gDevice_SpinLock);
+
 	const UInt32 numFramesInRingBuffer = gDevice_RingBuffer.length / gDevice_CurrentFormat.mBytesPerFrame;
 
 	switch(inOperationID)
 	{
 		case kAudioServerPlugInIOOperationReadInput:
 		{ // provide input from our internal buffer
-			const UInt32 sampleIndex = ((SInt64)inIOCycleInfo->mInputTime.mSampleTime + inIOCycleInfo->mNominalIOBufferFrameSize) % numFramesInRingBuffer;
-			const uint8_t *bufferStart = gDevice_RingBuffer.buffer + sampleIndex * gDevice_CurrentFormat.mBytesPerFrame;
-//			const UInt32 lastWriteEnd = atomic_load_explicit(&gDevice_LastWriteEnd, memory_order_acquire);
+			// In cycle 1, the HAL first does a ReadInput (for ~mNominalIOBufferFrameSize frames) at time t0, followed by a WriteMix at t0 + 2 * mNominalIOBufferFrameSize
+			// By reading from t0 + NominalIOBufferFrameSize, we'll pick up the previous cycle's WriteMix data (which is as current as possible)
+			const UInt32 readBegin = ((SInt64)inIOCycleInfo->mInputTime.mSampleTime + inIOCycleInfo->mNominalIOBufferFrameSize) % numFramesInRingBuffer;
+			const UInt32 readEnd = (readBegin + inIOBufferFrameSize) % numFramesInRingBuffer;
+			const uint8_t *bufferBegin = gDevice_RingBuffer.buffer + readBegin * gDevice_CurrentFormat.mBytesPerFrame;
 
-//			if (sampleIndex + inIOBufferFrameSize > lastWriteEnd)
-//				DebugMsg("LoopbackAudio_ReadInput: reading %i frames from sampleIndex %i, but lastWriteEnd %u\n", inIOBufferFrameSize, sampleIndex, lastWriteEnd);
+			const UInt32 writeEnd = gDevice_LastWriteEnd >= readEnd ? gDevice_LastWriteEnd : gDevice_LastWriteEnd + numFramesInRingBuffer;
 
-			memcpy(ioMainBuffer, bufferStart, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame);
-//			DebugMsg("LoopbackAudio_ReadInput: reading %i frames from sampleIndex %i\n", inIOBufferFrameSize, sampleIndex);
+			if (writeEnd - readEnd >= numFramesInRingBuffer / 2)
+			{
+				DebugMsg("LoopbackAudio_ReadInput: reading %i frames from sampleIndex %i, but lastWriteEnd %u\n", inIOBufferFrameSize, readBegin, gDevice_LastWriteEnd);
+//				++gDevice_TimeLineSeed;
+			}
+
+			memcpy(ioMainBuffer, bufferBegin, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame);
 			break;
 		}
 		case kAudioServerPlugInIOOperationWriteMix:
 		{ // write input to our internal buffer
-			const UInt32 sampleIndex = ((SInt64)inIOCycleInfo->mOutputTime.mSampleTime) % numFramesInRingBuffer;
-			uint8_t *bufferStart = gDevice_RingBuffer.buffer + sampleIndex * gDevice_CurrentFormat.mBytesPerFrame;
-			memcpy(bufferStart, ioMainBuffer, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame);
-//			atomic_store_explicit(&gDevice_LastWriteEnd, sampleIndex + inIOBufferFrameSize, memory_order_release);
-//			DebugMsg("LoopbackAudio_WriteMix: writing %i frames to sampleIndex %i\n", inIOBufferFrameSize, sampleIndex);
+			const UInt32 writeBegin = ((SInt64)inIOCycleInfo->mOutputTime.mSampleTime) % numFramesInRingBuffer;
+			uint8_t *bufferBegin = gDevice_RingBuffer.buffer + writeBegin * gDevice_CurrentFormat.mBytesPerFrame;
+			memcpy(bufferBegin, ioMainBuffer, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame);
+			gDevice_LastWriteEnd = (writeBegin + inIOBufferFrameSize) % numFramesInRingBuffer;
+//			DebugMsg("LoopbackAudio_WriteMix: writing %i frames to writeBegin %i\n", inIOBufferFrameSize, writeBegin);
 			break;
 		}
 	}
+
+	OSSpinLockUnlock(&gDevice_SpinLock);
 
 Done:
 	return theAnswer;
