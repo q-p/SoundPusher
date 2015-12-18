@@ -130,7 +130,7 @@ SPDIFAudioEncoder::SPDIFAudioEncoder(const AudioStreamBasicDescription &inFormat
   _muxer->pb = avio_alloc_context(buffer, MaxBytesPerPacket, 1 /* writable */, this, nullptr /* read */,
     WritePacketFunc, nullptr /* seek */);
 
-  AVStream *stream = avformat_new_stream(_muxer, avcodec_find_encoder(AV_CODEC_ID_EAC3));
+  AVStream *stream = avformat_new_stream(_muxer, avcodec_find_encoder(AV_CODEC_ID_AC3));
   assert(stream && stream->codec);
 
   AVCodecContext *coder = stream->codec;
