@@ -10,7 +10,6 @@
 #define DigitalOutputContext_hpp
 
 #include <vector>
-
 #include "CoreAudio/CoreAudio.h"
 #include "TPCircularBuffer.h"
 
@@ -26,7 +25,7 @@ struct DigitalOutputContext
    * @param format The (digital) output format to use for the stream.
    * @param channelLayoutTag The channel layout to use for both the input and compressed output data.
    */
-  DigitalOutputContext(AudioDeviceID device, AudioStreamID stream, const AudioStreamBasicDescription &format,
+  DigitalOutputContext(AudioObjectID device, AudioObjectID stream, const AudioStreamBasicDescription &format,
     const AudioChannelLayoutTag channelLayoutTag);
 
   ~DigitalOutputContext();
@@ -49,9 +48,9 @@ struct DigitalOutputContext
   void Stop();
 
   /// The device of this context.
-  const AudioDeviceID _device;
+  const AudioObjectID _device;
   /// The stream on _device of this context.
-  const AudioStreamID _stream;
+  const AudioObjectID _stream;
   /// The digital (output) format of _stream.
   const AudioStreamBasicDescription _format;
   /// The channel layout of the digital format transported to _stream, and also expected by the encoder.
@@ -83,8 +82,6 @@ protected:
 
   /// Hogs the output device.
   CAHelper::DeviceHogger _hogger;
-  /// Disallows mixing.
-  CAHelper::MixingSetter _mixingAllowed;
   /// Sets our desired format and restores the original.
   CAHelper::FormatSetter _originalFormat;
 };

@@ -6,11 +6,12 @@
 //
 //
 
-#include "CoreAudioHelper.hpp"
-
 #include <string>
 #include <cstring>
 #include <cctype>
+
+#include "CoreAudioHelper.hpp"
+
 
 static std::string GetOSStatusAsString(const OSStatus error)
 {
@@ -41,7 +42,7 @@ CoreAudioException::CoreAudioException(const OSStatus error)
 #pragma mark Device queries
 //==================================================================================================
 
-std::vector<AudioStreamBasicDescription> GetStreamPhysicalFormats(const AudioStreamID stream)
+std::vector<AudioStreamBasicDescription> GetStreamPhysicalFormats(const AudioObjectID stream)
 {
   UInt32 dataSize = 0;
   OSStatus status = noErr;
@@ -69,18 +70,18 @@ std::vector<AudioStreamBasicDescription> GetStreamPhysicalFormats(const AudioStr
   return formats;
 }
 
-std::vector<AudioStreamID> GetStreams(const AudioDeviceID device, const bool input)
+std::vector<AudioObjectID> GetStreams(const AudioObjectID device, const bool input)
 {
   UInt32 dataSize = 0;
   OSStatus status = noErr;
 
-  const AudioObjectPropertyAddress streamsAddress = { kAudioDevicePropertyStreams, input ? kAudioDevicePropertyScopeInput : kAudioDevicePropertyScopeOutput, kAudioObjectPropertyElementMaster };
+  const AudioObjectPropertyAddress streamsAddress = { kAudioDevicePropertyStreams, input ? kAudioObjectPropertyScopeInput : kAudioObjectPropertyScopeOutput, kAudioObjectPropertyElementMaster };
   // num streams
   status = AudioObjectGetPropertyDataSize(device, &streamsAddress, 0, NULL, &dataSize);
   if (dataSize == 0 || status != noErr)
     throw CoreAudioException(status);
   // get streams
-  std::vector<AudioStreamID> streams;
+  std::vector<AudioObjectID> streams;
   streams.resize(dataSize / sizeof streams.front());
   status = AudioObjectGetPropertyData(device, &streamsAddress, 0, NULL, &dataSize, streams.data());
   if (status != noErr)
@@ -89,7 +90,7 @@ std::vector<AudioStreamID> GetStreams(const AudioDeviceID device, const bool inp
   return streams;
 }
 
-std::vector<AudioDeviceID> GetDevices()
+std::vector<AudioObjectID> GetDevices()
 {
   UInt32 dataSize = 0;
   OSStatus status = noErr;
@@ -101,7 +102,7 @@ std::vector<AudioDeviceID> GetDevices()
   if (dataSize == 0 || status != noErr)
     throw CoreAudioException(status);
   // get devices
-  std::vector<AudioDeviceID> devices;
+  std::vector<AudioObjectID> devices;
   devices.resize(dataSize / sizeof devices.front());
   status = AudioObjectGetPropertyData(kAudioObjectSystemObject, &audioDevicesAddress, 0, NULL, &dataSize, devices.data());
   if (status != noErr)
@@ -115,9 +116,9 @@ std::vector<AudioDeviceID> GetDevices()
 #pragma mark DeviceHogger
 //==================================================================================================
 
-static const AudioObjectPropertyAddress DeviceHogModeAddress = { kAudioDevicePropertyHogMode, kAudioDevicePropertyScopeOutput, kAudioObjectPropertyElementMaster };
+static const AudioObjectPropertyAddress DeviceHogModeAddress = { kAudioDevicePropertyHogMode, kAudioObjectPropertyScopeOutput, kAudioObjectPropertyElementMaster };
 
-DeviceHogger::DeviceHogger(const AudioDeviceID device, const bool shouldHog)
+DeviceHogger::DeviceHogger(const AudioObjectID device, const bool shouldHog)
 : _device(device), _hog_pid(-1)
 {
   if (!shouldHog)
@@ -156,59 +157,10 @@ DeviceHogger::~DeviceHogger()
   status = AudioObjectSetPropertyData(_device, &DeviceHogModeAddress, 0, NULL, dataSize, &pid);
   if (status != noErr || pid != -1)
   {
-    printf("Could not release exclusive access to device\n");
+    printf("Could not release exclusive access to device %u\n", _device);
     return;
   }
   printf("No longer hogging device %u\n", _device);
-}
-
-//==================================================================================================
-#pragma mark -
-#pragma mark MixingSetter
-//==================================================================================================
-
-static const AudioObjectPropertyAddress DeviceSupportsMixingAddress = { kAudioDevicePropertySupportsMixing , kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMaster };
-
-MixingSetter::MixingSetter(const AudioDeviceID device, bool supportMixing)
-: _device(device), _originalState(-1), _didChange(false)
-{
-  if (!AudioObjectHasProperty(_device, &DeviceSupportsMixingAddress))
-    return;
-  OSStatus status = 0;
-  Boolean isSettable = false;
-  status = AudioObjectIsPropertySettable(_device, &DeviceSupportsMixingAddress, &isSettable);
-  if (status != noErr || !isSettable)
-    return;
-  UInt32 dataSize = 0;
-  status = AudioObjectGetPropertyDataSize(_device, &DeviceSupportsMixingAddress, 0, NULL, &dataSize);
-  if (status != noErr || dataSize != sizeof _originalState)
-    return;
-  status = AudioObjectGetPropertyData(_device, &DeviceSupportsMixingAddress, 0, NULL, &dataSize, &_originalState);
-  if (status != noErr || !isSettable || _originalState != 0)
-    return;
-  UInt32 value = supportMixing;
-  status = AudioObjectSetPropertyData(_device, &DeviceSupportsMixingAddress, 0, NULL, dataSize, &value);
-  if (status != noErr)
-    return;
-  _didChange = true;
-  printf("Changed mixing for device %u to %u\n", _device, value);
-}
-
-MixingSetter::~MixingSetter()
-{
-  if (!_didChange)
-    return;
-  _didChange = false;
-  // restore original mixing
-  OSStatus status = 0;
-  UInt32 dataSize = sizeof _originalState;
-  status = AudioObjectSetPropertyData(_device, &DeviceSupportsMixingAddress, 0, NULL, dataSize, &_originalState);
-  if (status != noErr)
-  {
-    printf("Could not release exclusive access to device\n");
-    return;
-  }
-  printf("Restored mixing for device %u to %u\n", _device, _originalState);
 }
 
 //==================================================================================================
@@ -218,7 +170,7 @@ MixingSetter::~MixingSetter()
 
 static const AudioObjectPropertyAddress StreamPhysicalFormatAddress = { kAudioStreamPropertyPhysicalFormat, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMaster };
 
-FormatSetter::FormatSetter(const AudioStreamID stream, const AudioStreamBasicDescription &format)
+FormatSetter::FormatSetter(const AudioObjectID stream, const AudioStreamBasicDescription &format)
 : _stream(stream), _originalFormat(), _didChange(false)
 {
   OSStatus status = 0;

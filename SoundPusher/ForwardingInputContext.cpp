@@ -15,7 +15,7 @@
 #include "DigitalOutputContext.hpp"
 
 
-ForwardingInputContext::ForwardingInputContext(AudioDeviceID device, AudioStreamID stream,
+ForwardingInputContext::ForwardingInputContext(AudioObjectID device, AudioObjectID stream,
   DigitalOutputContext &outContext)
 : _device(device), _stream(stream)
 , _format(outContext.GetInputFormat()), _outContext(outContext)

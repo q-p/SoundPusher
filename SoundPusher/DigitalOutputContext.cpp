@@ -29,12 +29,12 @@ static AudioStreamBasicDescription GetBestInputFormatForOutputFormat(const Audio
 }
 
 
-DigitalOutputContext::DigitalOutputContext(AudioDeviceID device, AudioStreamID stream,
+DigitalOutputContext::DigitalOutputContext(AudioObjectID device, AudioObjectID stream,
   const AudioStreamBasicDescription &format, const AudioChannelLayoutTag channelLayoutTag)
 : _device(device), _stream(stream), _format(format), _channelLayoutTag(channelLayoutTag)
 , _encoder(GetBestInputFormatForOutputFormat(_format, _channelLayoutTag), _channelLayoutTag, _format)
 , _deviceIOProcID(nullptr), _isRunning(false)
-, _hogger(_device, true), _mixingAllowed(_device, false), _originalFormat(_stream, format)
+, _hogger(_device, true), _originalFormat(_stream, format)
 {
   { // pre-encode silence (in case we run out of input data)
     std::vector<float> zeros(_encoder.GetNumFramesPerPacket(), 0.0f);

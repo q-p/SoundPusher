@@ -9,12 +9,15 @@
 #ifndef SPDIFAudioEncoder_hpp
 #define SPDIFAudioEncoder_hpp
 
+#include <stdexcept>
+#include <cstdint>
+#include <memory>
 #include "CoreAudio/CoreAudio.h"
-
 extern "C" {
 #include "libavcodec/avcodec.h"
 #include "libavformat/avformat.h"
 }
+
 
 struct LibAVException : std::runtime_error { LibAVException(const int error); };
 
@@ -37,9 +40,9 @@ struct SPDIFAudioEncoder
   ~SPDIFAudioEncoder();
 
   /// @return The input format used by the encoder.
-  const AudioStreamBasicDescription& GetInFormat() const { return _inFormat; }
+  const AudioStreamBasicDescription &GetInFormat() const { return _inFormat; }
   /// @return The digital output format produced by the encoder.
-  const AudioStreamBasicDescription& GetOutFormat() const { return _outFormat; }
+  const AudioStreamBasicDescription &GetOutFormat() const { return _outFormat; }
   /// @return The number of sample frames in a compressed packet.
   uint32_t GetNumFramesPerPacket() const { return _numFramesPerPacket; }
 

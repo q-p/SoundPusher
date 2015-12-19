@@ -10,6 +10,7 @@
 #define ForwardingInputContext_hpp
 
 #include <vector>
+#include "CoreAudio/CoreAudio.h"
 
 #include "CoreAudioHelper.hpp"
 
@@ -24,7 +25,7 @@ struct ForwardingInputContext
    * @param stream The input stream on device to forward.
    * @param outContext The output context to forward data to. Must outlive us.
    */
-  ForwardingInputContext(AudioDeviceID device, AudioStreamID stream, DigitalOutputContext &outContext);
+  ForwardingInputContext(AudioObjectID device, AudioObjectID stream, DigitalOutputContext &outContext);
 
   ~ForwardingInputContext();
 
@@ -35,9 +36,9 @@ struct ForwardingInputContext
   void Stop();
 
   /// The device of this context.
-  const AudioDeviceID _device;
+  const AudioObjectID _device;
   /// The input stream on _device of this context.
-  const AudioStreamID _stream;
+  const AudioObjectID _stream;
   /// The input format read from _stream.
   const AudioStreamBasicDescription _format;
 
