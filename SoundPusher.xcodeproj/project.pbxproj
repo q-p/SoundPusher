@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		8A65D68F1C2614D90071EBBE /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 8A65D68D1C2614D90071EBBE /* InfoPlist.strings */; };
 		8A7C0D161C1DD24A006EC2C6 /* LoopbackAudio.c in Sources */ = {isa = PBXBuildFile; fileRef = 8A7C0D151C1DD24A006EC2C6 /* LoopbackAudio.c */; };
 		8A7C0D181C1DD691006EC2C6 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 8A7C0D171C1DD691006EC2C6 /* Localizable.strings */; };
 		8A8D38EE1C1DE3A500B9A127 /* TPCircularBuffer.c in Sources */ = {isa = PBXBuildFile; fileRef = 8A8D38EC1C1DE3A500B9A127 /* TPCircularBuffer.c */; };
@@ -23,6 +24,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		8A65D68E1C2614D90071EBBE /* Base */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = Base; path = Base.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		8A7C0D0E1C1DCDCF006EC2C6 /* LoopbackAudio.driver */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LoopbackAudio.driver; sourceTree = BUILT_PRODUCTS_DIR; };
 		8A7C0D111C1DCDCF006EC2C6 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		8A7C0D151C1DD24A006EC2C6 /* LoopbackAudio.c */ = {isa = PBXFileReference; fileEncoding = 4; indentWidth = 4; lastKnownFileType = sourcecode.c.c; path = LoopbackAudio.c; sourceTree = "<group>"; tabWidth = 4; usesTabs = 1; };
@@ -130,9 +132,10 @@
 				8A97570A1C220EDD00F20BD7 /* ForwardingInputContext.hpp */,
 				8A9757021C204EAA00F20BD7 /* SPDIFAudioEncoder.cpp */,
 				8A9757031C204EAA00F20BD7 /* SPDIFAudioEncoder.hpp */,
-				8ADF7A8F1C1EFE9400C4F936 /* Assets.xcassets */,
 				8ADF7A911C1EFE9400C4F936 /* MainMenu.xib */,
+				8ADF7A8F1C1EFE9400C4F936 /* Assets.xcassets */,
 				8ADF7A941C1EFE9400C4F936 /* Info.plist */,
+				8A65D68D1C2614D90071EBBE /* InfoPlist.strings */,
 				8ADF7A8C1C1EFE9400C4F936 /* Supporting Files */,
 			);
 			path = SoundPusher;
@@ -232,6 +235,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				8ADF7A901C1EFE9400C4F936 /* Assets.xcassets in Resources */,
+				8A65D68F1C2614D90071EBBE /* InfoPlist.strings in Resources */,
 				8ADF7A931C1EFE9400C4F936 /* MainMenu.xib in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -265,6 +269,14 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXVariantGroup section */
+		8A65D68D1C2614D90071EBBE /* InfoPlist.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				8A65D68E1C2614D90071EBBE /* Base */,
+			);
+			name = InfoPlist.strings;
+			sourceTree = "<group>";
+		};
 		8ADF7A911C1EFE9400C4F936 /* MainMenu.xib */ = {
 			isa = PBXVariantGroup;
 			children = (

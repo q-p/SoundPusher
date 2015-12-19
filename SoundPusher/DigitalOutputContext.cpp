@@ -110,8 +110,8 @@ OSStatus DigitalOutputContext::DeviceIOProcFunc(AudioObjectID inDevice, const Au
   {
     // consume excess packets to minimize latency
     int32_t numConsumed = me->_format.mBytesPerPacket * (availableBytes / me->_format.mBytesPerPacket);
-    if (numConsumed > me->_format.mBytesPerPacket)
-      printf("consumed extra packet(s) (%i bytes in total, one is %i)\n", numConsumed, me->_format.mBytesPerPacket);
+//    if (numConsumed > me->_format.mBytesPerPacket)
+//      printf("consumed extra packet(s) (%i bytes in total, one is %i)\n", numConsumed, me->_format.mBytesPerPacket);
     buffer += numConsumed - me->_format.mBytesPerPacket; // grab the newest packet
     memcpy(outOutputData->mBuffers[0].mData, buffer, outOutputData->mBuffers[0].mDataByteSize);
     // note: we always consume whole packet(s), even if the request is for less

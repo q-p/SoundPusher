@@ -17,9 +17,24 @@ namespace CAHelper {
 
 struct CoreAudioException : std::runtime_error { CoreAudioException(const OSStatus error); };
 
+CFStringRef GetStringProperty(const AudioObjectID device, const AudioObjectPropertyAddress &address);
+
+extern const AudioObjectPropertyAddress DeviceUIDAddress;
+extern const AudioObjectPropertyAddress ObjectNameAddress;
+
 std::vector<AudioStreamBasicDescription> GetStreamPhysicalFormats(const AudioObjectID stream);
 std::vector<AudioObjectID> GetStreams(const AudioObjectID device, const bool input);
 std::vector<AudioObjectID> GetDevices();
+
+/// RAII class for changing the system default device
+struct DefaultDeviceChanger
+{
+  DefaultDeviceChanger(const AudioObjectID claimedDevice, const AudioObjectID alternativeDevice);
+  DefaultDeviceChanger(DefaultDeviceChanger &&) = delete; // non-copyable, non-movable
+  ~DefaultDeviceChanger();
+protected:
+  AudioObjectID _originalDevice;
+};
 
 /// RAII class for hogging a device
 struct DeviceHogger
@@ -30,18 +45,6 @@ struct DeviceHogger
 protected:
   AudioObjectID _device;
   pid_t _hog_pid;
-};
-
-/// RAII class for setting the mixing state on a device (and restoring the original state on destruction)
-struct MixingSetter
-{
-  MixingSetter(const AudioObjectID device, const bool supportMixing);
-  MixingSetter(MixingSetter &&) = delete; // non-copyable, non-movable
-  ~MixingSetter();
-protected:
-  AudioObjectID _device;
-  UInt32 _originalState;
-  bool _didChange;
 };
 
 /// RAII class for setting a stream format (and restoring the original format on destruction)
