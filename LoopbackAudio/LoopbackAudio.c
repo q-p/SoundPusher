@@ -2830,7 +2830,7 @@ static OSStatus	LoopbackAudio_DoIOOperation(AudioServerPlugInDriverRef inDriver,
 			// read back from where we last wrote
 			const UInt32 readBegin = (numFramesInRingBuffer + gDevice_LastWriteEnd - inIOBufferFrameSize) % numFramesInRingBuffer;
 //			const UInt32 readBegin = ((SInt64)inIOCycleInfo->mInputTime.mSampleTime + inIOCycleInfo->mNominalIOBufferFrameSize) % numFramesInRingBuffer;
-			const UInt32 readEnd = (readBegin + inIOBufferFrameSize) % numFramesInRingBuffer;
+//			const UInt32 readEnd = (readBegin + inIOBufferFrameSize) % numFramesInRingBuffer;
 			uint8_t *bufferBegin = gDevice_RingBuffer.buffer + readBegin * gDevice_CurrentFormat.mBytesPerFrame;
 
 //			if (writeEnd - readEnd >= numFramesInRingBuffer / 2)
