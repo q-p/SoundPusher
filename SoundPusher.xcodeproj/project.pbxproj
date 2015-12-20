@@ -8,6 +8,12 @@
 
 /* Begin PBXBuildFile section */
 		8A65D68F1C2614D90071EBBE /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 8A65D68D1C2614D90071EBBE /* InfoPlist.strings */; };
+		8A65D6AC1C26C1790071EBBE /* libavcodec.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = 8A65D6A91C26C1790071EBBE /* libavcodec.dylib */; };
+		8A65D6AD1C26C1790071EBBE /* libavformat.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = 8A65D6AA1C26C1790071EBBE /* libavformat.dylib */; };
+		8A65D6AE1C26C1790071EBBE /* libavutil.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = 8A65D6AB1C26C1790071EBBE /* libavutil.dylib */; };
+		8A65D6B81C26CE540071EBBE /* libavcodec.dylib in CopyFiles */ = {isa = PBXBuildFile; fileRef = 8A65D6A91C26C1790071EBBE /* libavcodec.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		8A65D6B91C26CE540071EBBE /* libavformat.dylib in CopyFiles */ = {isa = PBXBuildFile; fileRef = 8A65D6AA1C26C1790071EBBE /* libavformat.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		8A65D6BA1C26CE540071EBBE /* libavutil.dylib in CopyFiles */ = {isa = PBXBuildFile; fileRef = 8A65D6AB1C26C1790071EBBE /* libavutil.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		8A7C0D161C1DD24A006EC2C6 /* LoopbackAudio.c in Sources */ = {isa = PBXBuildFile; fileRef = 8A7C0D151C1DD24A006EC2C6 /* LoopbackAudio.c */; };
 		8A7C0D181C1DD691006EC2C6 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 8A7C0D171C1DD691006EC2C6 /* Localizable.strings */; };
 		8A8D38EE1C1DE3A500B9A127 /* TPCircularBuffer.c in Sources */ = {isa = PBXBuildFile; fileRef = 8A8D38EC1C1DE3A500B9A127 /* TPCircularBuffer.c */; };
@@ -23,8 +29,26 @@
 		8ADF7AA41C1F2D1500C4F936 /* CoreAudioHelper.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 8ADF7AA21C1F2D1500C4F936 /* CoreAudioHelper.cpp */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		8A65D6B71C26CE3B0071EBBE /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 12;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				8A65D6B81C26CE540071EBBE /* libavcodec.dylib in CopyFiles */,
+				8A65D6B91C26CE540071EBBE /* libavformat.dylib in CopyFiles */,
+				8A65D6BA1C26CE540071EBBE /* libavutil.dylib in CopyFiles */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
 		8A65D68E1C2614D90071EBBE /* Base */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = Base; path = Base.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		8A65D6A91C26C1790071EBBE /* libavcodec.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libavcodec.dylib; path = lib/libavcodec.dylib; sourceTree = FFMPEG_HOME; };
+		8A65D6AA1C26C1790071EBBE /* libavformat.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libavformat.dylib; path = lib/libavformat.dylib; sourceTree = FFMPEG_HOME; };
+		8A65D6AB1C26C1790071EBBE /* libavutil.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libavutil.dylib; path = lib/libavutil.dylib; sourceTree = FFMPEG_HOME; };
 		8A7C0D0E1C1DCDCF006EC2C6 /* LoopbackAudio.driver */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LoopbackAudio.driver; sourceTree = BUILT_PRODUCTS_DIR; };
 		8A7C0D111C1DCDCF006EC2C6 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		8A7C0D151C1DD24A006EC2C6 /* LoopbackAudio.c */ = {isa = PBXFileReference; fileEncoding = 4; indentWidth = 4; lastKnownFileType = sourcecode.c.c; path = LoopbackAudio.c; sourceTree = "<group>"; tabWidth = 4; usesTabs = 1; };
@@ -63,6 +87,9 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				8A65D6AC1C26C1790071EBBE /* libavcodec.dylib in Frameworks */,
+				8A65D6AD1C26C1790071EBBE /* libavformat.dylib in Frameworks */,
+				8A65D6AE1C26C1790071EBBE /* libavutil.dylib in Frameworks */,
 				8ADF7AA11C1F118400C4F936 /* CoreAudio.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -70,6 +97,16 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		8A65D6B21C26C2630071EBBE /* FFmpeg */ = {
+			isa = PBXGroup;
+			children = (
+				8A65D6A91C26C1790071EBBE /* libavcodec.dylib */,
+				8A65D6AA1C26C1790071EBBE /* libavformat.dylib */,
+				8A65D6AB1C26C1790071EBBE /* libavutil.dylib */,
+			);
+			name = FFmpeg;
+			sourceTree = "<group>";
+		};
 		8A7C0D031C1DB801006EC2C6 = {
 			isa = PBXGroup;
 			children = (
@@ -106,6 +143,7 @@
 			children = (
 				8ADF7AA01C1F118400C4F936 /* CoreAudio.framework */,
 				8A8D38F01C1DE3BB00B9A127 /* TPCircularBuffer */,
+				8A65D6B21C26C2630071EBBE /* FFmpeg */,
 			);
 			name = thirdparty;
 			sourceTree = "<group>";
@@ -175,6 +213,7 @@
 			buildPhases = (
 				8ADF7A831C1EFE9400C4F936 /* Sources */,
 				8ADF7A841C1EFE9400C4F936 /* Frameworks */,
+				8A65D6B71C26CE3B0071EBBE /* CopyFiles */,
 				8ADF7A851C1EFE9400C4F936 /* Resources */,
 			);
 			buildRules = (
@@ -438,11 +477,6 @@
 				MACOSX_DEPLOYMENT_TARGET = 10.11;
 				MTL_ENABLE_DEBUG_INFO = YES;
 				ONLY_ACTIVE_ARCH = YES;
-				OTHER_LDFLAGS = (
-					"-lavformat",
-					"-lavcodec",
-					"-lavutil",
-				);
 				PRODUCT_BUNDLE_IDENTIFIER = de.maven.SoundPusher;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
@@ -470,7 +504,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_IDENTITY = "-";
 				COMBINE_HIDPI_IMAGES = YES;
-				COPY_PHASE_STRIP = NO;
+				COPY_PHASE_STRIP = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -488,11 +522,6 @@
 				LIBRARY_SEARCH_PATHS = $FFMPEG_HOME/lib;
 				MACOSX_DEPLOYMENT_TARGET = 10.11;
 				MTL_ENABLE_DEBUG_INFO = NO;
-				OTHER_LDFLAGS = (
-					"-lavformat",
-					"-lavcodec",
-					"-lavutil",
-				);
 				PRODUCT_BUNDLE_IDENTIFIER = de.maven.SoundPusher;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;

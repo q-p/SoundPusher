@@ -10,9 +10,21 @@ There are two component required to make this work:
 
 ## Dependencies
 ### FFmpeg — libavcodec, libavformat
-Here's a configuration that builds a cut-down version of [FFmpeg](http://www.ffmpeg.org) that includes all that's required for SoundPusher:
+Here's a script that builds a cut-down version of [FFmpeg](http://www.ffmpeg.org) that includes all that's required for SoundPusher:
 ```sh
-./configure --prefix=$FFMPEG_HOME --cc=clang --disable-all --disable-doc --disable-everything --disable-pthreads --disable-iconv --disable-securetransport --enable-avutil --enable-avcodec --enable-avformat --enable-encoder=ac3 --enable-muxer=spdif
+#!/bin/sh
+./configure --prefix=$FFMPEG_HOME --cc=clang --disable-static --enable-shared --extra-ldlibflags=-Wl,-unexported_symbol,"_ff_*" --disable-all --disable-doc --disable-everything --disable-pthreads --disable-iconv --disable-securetransport --enable-avutil --enable-avcodec --enable-avformat --enable-encoder=ac3 --enable-muxer=spdif
+make -j8
+make install
+# update shared library install names
+cd $FFMPEG_HOME/lib
+AVUTIL_ID=`otool -XD libavutil.dylib`
+AVCODEC_ID=`otool -XD libavcodec.dylib`
+AVFORMAT_ID=`otool -XD libavformat.dylib`
+for lib in libavutil libavcodec libavformat
+do
+    install_name_tool -id @rpath/$lib.dylib -change $AVUTIL_ID @rpath/libavutil.dylib -change $AVCODEC_ID @rpath/libavcodec.dylib -change $AVFORMAT_ID @rpath/libavformat.dylib $lib.dylib
+done
 ```
 
 ## Acknowledgements
