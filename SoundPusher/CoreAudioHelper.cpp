@@ -6,35 +6,34 @@
 //
 //
 
-#include <string>
 #include <cstring>
 #include <cctype>
 
 #include "CoreAudioHelper.hpp"
 
 
-static std::string GetOSStatusAsString(const OSStatus error)
+namespace CAHelper {
+
+std::string Get4CCAsString(const UInt32 val)
 {
   union
   {
-    OSStatus error;
+    UInt32 val;
     char fcc[5]; // one extra for terminating 0
   } both;
 
-  both.error = CFSwapInt32HostToBig(error);
+  both.val = CFSwapInt32HostToBig(val);
   // see if it appears to be a 4-char-code
   if (std::isprint(both.fcc[0]) && std::isprint(both.fcc[1]) && std::isprint(both.fcc[2]) && std::isprint(both.fcc[3]))
   {
     both.fcc[4] = '\0';
     return std::string(both.fcc);
   }
-  return std::to_string(error);
+  return std::to_string(val);
 }
 
-namespace CAHelper {
-
 CoreAudioException::CoreAudioException(const OSStatus error)
-: std::runtime_error(GetOSStatusAsString(error))
+: std::runtime_error(Get4CCAsString(error))
 { }
 
 const AudioObjectPropertyAddress DeviceUIDAddress = {kAudioDevicePropertyDeviceUID, 0, 0};
@@ -145,7 +144,7 @@ DefaultDeviceChanger::DefaultDeviceChanger(const AudioObjectID claimedDevice, co
     status = AudioObjectSetPropertyData(kAudioObjectSystemObject, &DefaultDeviceAddress, 0, NULL, dataSize, &alternativeDevice);
     if (status != noErr)
     {
-      printf("Could not change default device: %s\n", GetOSStatusAsString(status).c_str());
+      printf("Could not change default device: %s\n", Get4CCAsString(status).c_str());
       return;
     }
     _originalDevice = defaultDevice;
@@ -159,7 +158,7 @@ DefaultDeviceChanger::~DefaultDeviceChanger()
     UInt32 dataSize = sizeof _originalDevice;
     OSStatus status = AudioObjectSetPropertyData(kAudioObjectSystemObject, &DefaultDeviceAddress, 0, NULL, dataSize, &_originalDevice);
     if (status != noErr)
-      printf("Could not restore default device: %s\n", GetOSStatusAsString(status).c_str());
+      printf("Could not restore default device: %s\n", Get4CCAsString(status).c_str());
   }
 }
 
@@ -248,7 +247,7 @@ FormatSetter::~FormatSetter()
   status = AudioObjectSetPropertyData(_stream, &StreamPhysicalFormatAddress, 0, NULL, dataSize, &_originalFormat);
   if (status != noErr)
   {
-    printf("Could not restore original format on stream %u %s\n", _stream, GetOSStatusAsString(status).c_str());
+    printf("Could not restore original format on stream %u %s\n", _stream, Get4CCAsString(status).c_str());
     return;
   }
 }

@@ -10,10 +10,13 @@
 #define CoreAudioHelper_hpp
 
 #include <vector>
+#include <string>
 #include <stdexcept>
 #include "CoreAudio/CoreAudio.h"
 
 namespace CAHelper {
+
+std::string Get4CCAsString(const UInt32 val);
 
 struct CoreAudioException : std::runtime_error { CoreAudioException(const OSStatus error); };
 

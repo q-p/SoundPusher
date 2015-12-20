@@ -311,6 +311,7 @@ static void AttemptToStartMissingChains()
 
 - (void)menuNeedsUpdate:(NSMenu *)menu
 {
+  bool showDebugInfo = ([NSEvent modifierFlags] & NSAlternateKeyMask) != 0;
   // remove old chain menu items
   while (menu.numberOfItems > 2)
     [menu removeItemAtIndex:0];
@@ -344,6 +345,7 @@ static void AttemptToStartMissingChains()
     for (auto i = NSUInteger{0}; i < device._streams.size(); ++i)
     {
       ForwardingChainIdentifier *identifier = [[ForwardingChainIdentifier alloc] initWithOutDeviceUID:device._uid andOutStreamIndex:i];
+      const AudioStreamBasicDescription &format = device._streams[i]._formats.front();
       NSMenuItem *item = [NSMenuItem new];
       item.title = deviceName;
       item.enabled = !loopbackDevices.empty();
@@ -358,6 +360,14 @@ static void AttemptToStartMissingChains()
       item.target = self;
       [menu insertItem:item atIndex:insertionIndex];
       ++insertionIndex;
+      if (showDebugInfo)
+      {
+        NSMenuItem *item = [NSMenuItem new];
+        item.title = [NSString stringWithFormat:@"%.0fHz %u bytes/packet %u frames/packet [%s]", format.mSampleRate, format.mBytesPerPacket, format.mFramesPerPacket, CAHelper::Get4CCAsString(format.mFormatID).c_str()];
+        item.enabled = NO;
+        [menu insertItem:item atIndex:insertionIndex];
+        ++insertionIndex;
+      }
     }
   }
 }
