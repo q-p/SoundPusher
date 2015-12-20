@@ -20,25 +20,51 @@ extern "C" {
 #include "DigitalOutputContext.hpp"
 #include "ForwardingInputContext.hpp"
 
+#import "ForwardingChainIdentifier.h"
 #import "AppDelegate.h"
 
 @interface AppDelegate ()
 @property (weak) IBOutlet NSMenu *menuForStatusItem;
 @end
 
+@implementation AppDelegate
 
 /// Stream with compatible formats.
 struct Stream
 {
-  AudioObjectID streamID;
-  std::vector<AudioStreamBasicDescription> formats;
+  Stream(const AudioObjectID stream, std::vector<AudioStreamBasicDescription> &&formats)
+  : _stream(stream)
+  , _formats(std::move(formats))
+  { }
+
+  AudioObjectID _stream;
+  std::vector<AudioStreamBasicDescription> _formats;
 };
 
 /// Device with compatible streams (that contain compatible formats).
 struct Device
 {
-  AudioObjectID deviceID;
-  std::vector<Stream> streams;
+  Device(const AudioObjectID device, std::vector<Stream> &&streams)
+  : _device(device)
+  , _uid(CFBridgingRelease(CAHelper::GetStringProperty(_device, CAHelper::DeviceUIDAddress)))
+  , _streams(std::move(streams))
+  { }
+
+  bool Contains(ForwardingChainIdentifier *identifier) const
+  {
+    if (![_uid isEqualToString:identifier.outDeviceUID])
+      return false;
+    if (identifier.outStreamIndex >= _streams.size())
+    {
+      NSLog(@"Device %@ has %zu streams, but checked one is %zu", _uid, _streams.size(), identifier.outStreamIndex);
+      return false;
+    }
+    return true;
+  }
+
+  AudioObjectID _device;
+  NSString *_uid;
+  std::vector<Stream> _streams;
 };
 
 static std::vector<Device> GetDevicesWithDigitalOutput(const std::vector<AudioObjectID> &allDevices)
@@ -99,8 +125,6 @@ static std::vector<Device> GetLoopbackDevicesWithInput(const std::vector<AudioOb
   return result;
 }
 
-@implementation AppDelegate
-
 static const AudioObjectPropertyAddress DeviceAliveAddress = {kAudioDevicePropertyDeviceIsAlive, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMaster};
 
 // forward declaration (because this func needs access to _chains, but _chains needs to know the type of ForwardingChain)
@@ -109,13 +133,13 @@ static OSStatus DeviceAliveListenerFunc(AudioObjectID inObjectID, UInt32 inNumbe
 
 struct ForwardingChain
 {
-  ForwardingChain(AudioObjectID inDevice, AudioObjectID inStream,
-    AudioObjectID outDevice, AudioObjectID outStream, NSInteger outStreamIndex, const AudioStreamBasicDescription &outFormat,
+  ForwardingChain(ForwardingChainIdentifier *identifier, AudioObjectID inDevice, AudioObjectID inStream,
+    AudioObjectID outDevice, AudioObjectID outStream, const AudioStreamBasicDescription &outFormat,
     const AudioChannelLayoutTag channelLayoutTag)
-  : _defaultDevice(outDevice, inDevice)
+  : _identifier(identifier)
+  , _defaultDevice(outDevice, inDevice)
   , _output(outDevice, outStream, outFormat, channelLayoutTag)
   , _input(inDevice, inStream, _output)
-  , _outputDeviceUID(CFBridgingRelease(CAHelper::GetStringProperty(_output._device, CAHelper::DeviceUIDAddress))), _outputStreamIndex(outStreamIndex)
   {
       OSStatus status = AudioObjectAddPropertyListener(_output._device, &DeviceAliveAddress, DeviceAliveListenerFunc, this);
       if (status != noErr)
@@ -135,17 +159,16 @@ struct ForwardingChain
       NSLog(@"Could not remove alive-listener for input device %u", _input._device);
   }
 
+  ForwardingChainIdentifier *_identifier;
   CAHelper::DefaultDeviceChanger _defaultDevice;
   DigitalOutputContext _output;
   ForwardingInputContext _input;
-  NSString *_outputDeviceUID;
-  NSInteger _outputStreamIndex;
 };
 
 // our status menu item
 NSStatusItem *_statusItem = nil;
 // the list of chains which we want to be active (but which may not be, e.g. due to disconnected devices etc).
-NSMutableSet<NSDictionary *> *_desiredActiveChains = [NSMutableSet new];
+NSMutableSet<ForwardingChainIdentifier *> *_desiredActiveChains = [NSMutableSet new];
 // the actual instances of running chains
 std::vector<std::unique_ptr<ForwardingChain>> _chains;
 
@@ -177,41 +200,38 @@ static void AttemptToStartMissingChains()
 
   // which devices are currently available
   const auto outputDevices = GetDevicesWithDigitalOutput(allDevices);
-  NSMutableSet<NSDictionary *> *desired = [NSMutableSet setWithCapacity:outputDevices.size()];
+  NSMutableSet<ForwardingChainIdentifier *> *desired = [NSMutableSet setWithCapacity:outputDevices.size()];
   for (const auto &outDevice : outputDevices)
   {
-      NSString *outUID = CFBridgingRelease(CAHelper::GetStringProperty(outDevice.deviceID, CAHelper::DeviceUIDAddress));
-      for (auto i = NSInteger{0}; i < outDevice.streams.size(); ++i)
-        [desired addObject:@{@"Device" : outUID, @"Stream" : [NSNumber numberWithInteger:i]}];
+      for (auto i = NSUInteger{0}; i < outDevice._streams.size(); ++i)
+        [desired addObject:[[ForwardingChainIdentifier alloc] initWithOutDeviceUID:outDevice._uid andOutStreamIndex:i]];
   }
 
   // which devices are currently running
-  NSMutableSet<NSDictionary *> *running = [NSMutableSet setWithCapacity:_chains.size()];
+  NSMutableSet<ForwardingChainIdentifier *> *running = [NSMutableSet setWithCapacity:_chains.size()];
   for (const auto &chain : _chains)
-    [running addObject:@{@"Device" : chain->_outputDeviceUID, @"Stream" : [NSNumber numberWithInteger:chain->_outputStreamIndex]}];
+    [running addObject:chain->_identifier];
 
   [desired intersectSet:_desiredActiveChains];
   [desired minusSet:running];
 
-  for (NSDictionary *attempt in desired)
+  for (ForwardingChainIdentifier *attempt in desired)
   {
-    NSString *uid = attempt[@"Device"];
-    NSInteger streamIndex = [(NSNumber *)attempt[@"Stream"] integerValue];
     // find the device in the actual device list
-    const auto outDeviceIt = std::find_if(outputDevices.cbegin(), outputDevices.cend(), [uid, streamIndex](const auto &device)
+    const auto outDeviceIt = std::find_if(outputDevices.cbegin(), outputDevices.cend(), [attempt](const Device &device)
     {
-      NSString *outUID = CFBridgingRelease(CAHelper::GetStringProperty(device.deviceID, CAHelper::DeviceUIDAddress));
-      return streamIndex < device.streams.size() && [uid isEqualToString:outUID];
+      return device.Contains(attempt);
     });
     assert(outDeviceIt != outputDevices.cend());
 
     const auto &inDevice = loopbackDevices.front();
     const auto &outDevice = *outDeviceIt;
-    const auto &outStream = outDevice.streams[streamIndex];
+    const auto &outStream = outDevice._streams[attempt.outStreamIndex];
     try
     { // create and start-up first
-      auto newChain = std::make_unique<ForwardingChain>(inDevice.deviceID, inDevice.streams.front().streamID,
-        outDevice.deviceID, outStream.streamID, streamIndex, outStream.formats.front(), kAudioChannelLayoutTag_MPEG_5_1_C);
+      auto newChain = std::make_unique<ForwardingChain>(attempt, inDevice._device, inDevice._streams.front()._stream,
+        outDevice._device, outStream._stream, outStream._formats.front(),
+        kAudioChannelLayoutTag_MPEG_5_1_C);
       newChain->_input.Start();
       newChain->_output.Start();
 
@@ -220,7 +240,7 @@ static void AttemptToStartMissingChains()
     }
     catch (const std::exception &e)
     {
-      NSLog(@"Could not initialize forwarding chain: %s", e.what());
+      NSLog(@"Could not initialize forwarding chain %@: %s", attempt, e.what());
     }
   }
 }
@@ -228,15 +248,14 @@ static void AttemptToStartMissingChains()
 
 - (void)toggleOutputDeviceAction:(NSMenuItem *)item
 {
-  NSString *deviceUID = item.representedObject;
-  NSInteger streamIndex = item.tag;
+  ForwardingChainIdentifier *identifier = item.representedObject;
   if (item.state == NSOnState)
   { // should try to stop chain
     bool didFind = false;
     for (auto it = _chains.begin(); it != _chains.end(); /* in body */)
     {
       const auto &chain = *it;
-      if (chain->_outputStreamIndex == streamIndex && [chain->_outputDeviceUID isEqualToString:deviceUID])
+      if ([chain->_identifier isEqual:identifier])
       {
         didFind = true;
         it =_chains.erase(it);
@@ -245,10 +264,10 @@ static void AttemptToStartMissingChains()
         ++it;
     }
     // also remove from desired active
-    [_desiredActiveChains removeObject:@{@"Device" : deviceUID, @"Stream" : [NSNumber numberWithInteger:streamIndex]}];
-    [[NSUserDefaults standardUserDefaults] setObject:_desiredActiveChains.allObjects forKey:@"ActiveChains"];
+    [_desiredActiveChains removeObject:identifier];
+    [[NSUserDefaults standardUserDefaults] setObject:[_desiredActiveChains.allObjects valueForKey:@"asDictionary"] forKey:@"ActiveChains"];
     if (!didFind)
-      NSLog(@"Could not disable chain for %@ (stream index %zd): Not found / active", deviceUID, streamIndex);
+      NSLog(@"Could not disable chain %@: Not found / active", identifier);
   }
   else
   { // try to add the chain
@@ -262,31 +281,27 @@ static void AttemptToStartMissingChains()
     const auto outputDevices = GetDevicesWithDigitalOutput(allDevices);
     for (const auto &outDevice : outputDevices)
     {
-      NSString *outUID = CFBridgingRelease(CAHelper::GetStringProperty(outDevice.deviceID, CAHelper::DeviceUIDAddress));
-      if (![deviceUID isEqualToString:outUID])
+      if (!outDevice.Contains(identifier))
         continue;
-      if (streamIndex >= outDevice.streams.size())
-      {
-        NSLog(@"Device %@ has %zu streams, but desired one is %zd", deviceUID, outDevice.streams.size(), streamIndex);
-        return;
-      }
+
       const auto &inDevice = loopbackDevices.front();
-      const auto &outStream = outDevice.streams[streamIndex];
+      const auto &outStream = outDevice._streams[identifier.outStreamIndex];
       try
       { // create and start-up first
-        auto newChain = std::make_unique<ForwardingChain>(inDevice.deviceID, inDevice.streams.front().streamID,
-          outDevice.deviceID, outStream.streamID, streamIndex, outStream.formats.front(), kAudioChannelLayoutTag_MPEG_5_1_C);
+        auto newChain = std::make_unique<ForwardingChain>(identifier, inDevice._device, inDevice._streams.front()._stream,
+          outDevice._device, outStream._stream, outStream._formats.front(),
+          kAudioChannelLayoutTag_MPEG_5_1_C);
         newChain->_input.Start();
         newChain->_output.Start();
 
         // and only add if everything worked so far
         _chains.emplace_back(std::move(newChain));
-        [_desiredActiveChains addObject:@{@"Device" : outUID, @"Stream" : [NSNumber numberWithInteger:streamIndex]}];
-        [[NSUserDefaults standardUserDefaults] setObject:_desiredActiveChains.allObjects forKey:@"ActiveChains"];
+        [_desiredActiveChains addObject:identifier];
+        [[NSUserDefaults standardUserDefaults] setObject:[_desiredActiveChains.allObjects valueForKey:@"asDictionary"] forKey:@"ActiveChains"];
       }
       catch (const std::exception &e)
       {
-        NSLog(@"Could not initialize forwarding chain: %s", e.what());
+        NSLog(@"Could not initialize chain %@: %s", identifier, e.what());
       }
       break;
     }
@@ -302,7 +317,7 @@ static void AttemptToStartMissingChains()
 
   const auto allDevices = CAHelper::GetDevices();
 
-  NSInteger insertionIndex = 0;
+  NSUInteger insertionIndex = 0;
   const auto loopbackDevices = GetLoopbackDevicesWithInput(allDevices);
   if (loopbackDevices.empty())
   {
@@ -324,32 +339,25 @@ static void AttemptToStartMissingChains()
   }
   for (const auto &device : outputDevices)
   {
-    NSString *deviceUID = CFBridgingRelease(CAHelper::GetStringProperty(device.deviceID, CAHelper::DeviceUIDAddress));
-    NSString *deviceName = CFBridgingRelease(CAHelper::GetStringProperty(device.deviceID, CAHelper::ObjectNameAddress));
+    NSString *deviceName = CFBridgingRelease(CAHelper::GetStringProperty(device._device, CAHelper::ObjectNameAddress));
 
-    NSInteger streamIndex = 0;
-    for (const auto &stream : device.streams)
+    for (auto i = NSUInteger{0}; i < device._streams.size(); ++i)
     {
+      ForwardingChainIdentifier *identifier = [[ForwardingChainIdentifier alloc] initWithOutDeviceUID:device._uid andOutStreamIndex:i];
       NSMenuItem *item = [NSMenuItem new];
       item.title = deviceName;
       item.enabled = !loopbackDevices.empty();
-      bool isActive = false;
-      for (const auto &chain : _chains)
+      const auto chainIt = std::find_if(_chains.cbegin(), _chains.cend(), [identifier](const std::unique_ptr<ForwardingChain> &chain)
       {
-        if (chain->_output._device == device.deviceID && chain->_output._stream == stream.streamID)
-        {
-          isActive = true;
-          break;
-        }
-      }
+        return [identifier isEqual:chain->_identifier];
+      });
+      const bool isActive = chainIt != _chains.cend();
       item.state = isActive ? NSOnState : NSOffState;
-      item.representedObject = deviceUID;
-      item.tag = streamIndex;
+      item.representedObject = identifier;
       item.action = @selector(toggleOutputDeviceAction:);
       item.target = self;
       [menu insertItem:item atIndex:insertionIndex];
       ++insertionIndex;
-      ++streamIndex;
     }
   }
 }
@@ -386,11 +394,16 @@ static void AttemptToStartMissingChains()
   }
 
   NSArray<NSDictionary *> *desiredActiveArray = [[NSUserDefaults standardUserDefaults] arrayForKey:@"ActiveChains"];
-  if (desiredActiveArray)
+  for (NSDictionary *dict in desiredActiveArray)
   {
-    [_desiredActiveChains addObjectsFromArray:desiredActiveArray];
-    AttemptToStartMissingChains();
+    if (![dict isKindOfClass:NSDictionary.class])
+      continue;
+    ForwardingChainIdentifier *identifier = [ForwardingChainIdentifier identifierWithDictionary:dict];
+    if (!identifier)
+      continue;
+    [_desiredActiveChains addObject:identifier];
   }
+  AttemptToStartMissingChains();
 
   [[[NSWorkspace sharedWorkspace] notificationCenter] addObserver:self selector:@selector(receiveSleepNote:)
     name:NSWorkspaceWillSleepNotification object:NULL];
