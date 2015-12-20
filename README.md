@@ -5,6 +5,7 @@ Provides a virtual 5.1-channel audio output device whose contents are real-time 
 
 ## Usage
 There are two component required to make this work:
+
 1. `LoopbackAudio` — A user-space CoreAudio driver (aka `AudioServerPlugin`) that provides a 5.1 output stream whose contents are mirrored ("looped back") to its own input stream. This allows applications to process the audio output of the system (if it is sent to the `LoopbackAudio` device). `LoopbackAudio.driver` must be installed (copied) into the `/Library/Audio/Plug-Ins/HAL` directory.
 2. `SoundPusher` — An application that continuously reads audio from the `LoopbackAudio` device, encodes in into a compressed format, and then sends that compressed stream to a (hopefully) real sound device's digital output stream. This is controlled through its menu bar extra.
 
