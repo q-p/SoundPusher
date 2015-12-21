@@ -21,7 +21,7 @@
 		8A9757041C204EAA00F20BD7 /* SPDIFAudioEncoder.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 8A9757021C204EAA00F20BD7 /* SPDIFAudioEncoder.cpp */; };
 		8A9757071C21E51800F20BD7 /* DigitalOutputContext.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 8A9757051C21E51800F20BD7 /* DigitalOutputContext.cpp */; };
 		8A9757081C2204D500F20BD7 /* TPCircularBuffer.c in Sources */ = {isa = PBXBuildFile; fileRef = 8A8D38EC1C1DE3A500B9A127 /* TPCircularBuffer.c */; };
-		8A97570B1C220EDD00F20BD7 /* ForwardingInputContext.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 8A9757091C220EDD00F20BD7 /* ForwardingInputContext.cpp */; };
+		8A97570B1C220EDD00F20BD7 /* ForwardingInputTap.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 8A9757091C220EDD00F20BD7 /* ForwardingInputTap.cpp */; };
 		8ADF7A8B1C1EFE9400C4F936 /* AppDelegate.mm in Sources */ = {isa = PBXBuildFile; fileRef = 8ADF7A8A1C1EFE9400C4F936 /* AppDelegate.mm */; };
 		8ADF7A8E1C1EFE9400C4F936 /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = 8ADF7A8D1C1EFE9400C4F936 /* main.m */; };
 		8ADF7A901C1EFE9400C4F936 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8ADF7A8F1C1EFE9400C4F936 /* Assets.xcassets */; };
@@ -62,8 +62,8 @@
 		8A9757031C204EAA00F20BD7 /* SPDIFAudioEncoder.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = SPDIFAudioEncoder.hpp; sourceTree = "<group>"; };
 		8A9757051C21E51800F20BD7 /* DigitalOutputContext.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = DigitalOutputContext.cpp; sourceTree = "<group>"; };
 		8A9757061C21E51800F20BD7 /* DigitalOutputContext.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = DigitalOutputContext.hpp; sourceTree = "<group>"; };
-		8A9757091C220EDD00F20BD7 /* ForwardingInputContext.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = ForwardingInputContext.cpp; sourceTree = "<group>"; };
-		8A97570A1C220EDD00F20BD7 /* ForwardingInputContext.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = ForwardingInputContext.hpp; sourceTree = "<group>"; };
+		8A9757091C220EDD00F20BD7 /* ForwardingInputTap.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = ForwardingInputTap.cpp; sourceTree = "<group>"; };
+		8A97570A1C220EDD00F20BD7 /* ForwardingInputTap.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = ForwardingInputTap.hpp; sourceTree = "<group>"; };
 		8ADF7A871C1EFE9400C4F936 /* SoundPusher.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SoundPusher.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		8ADF7A891C1EFE9400C4F936 /* AppDelegate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AppDelegate.h; sourceTree = "<group>"; };
 		8ADF7A8A1C1EFE9400C4F936 /* AppDelegate.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = AppDelegate.mm; sourceTree = "<group>"; };
@@ -171,8 +171,8 @@
 				8ADF7AA31C1F2D1500C4F936 /* CoreAudioHelper.hpp */,
 				8A9757051C21E51800F20BD7 /* DigitalOutputContext.cpp */,
 				8A9757061C21E51800F20BD7 /* DigitalOutputContext.hpp */,
-				8A9757091C220EDD00F20BD7 /* ForwardingInputContext.cpp */,
-				8A97570A1C220EDD00F20BD7 /* ForwardingInputContext.hpp */,
+				8A9757091C220EDD00F20BD7 /* ForwardingInputTap.cpp */,
+				8A97570A1C220EDD00F20BD7 /* ForwardingInputTap.hpp */,
 				8A9757021C204EAA00F20BD7 /* SPDIFAudioEncoder.cpp */,
 				8A9757031C204EAA00F20BD7 /* SPDIFAudioEncoder.hpp */,
 				8ADF7A911C1EFE9400C4F936 /* MainMenu.xib */,
@@ -305,7 +305,7 @@
 				8ADF7AA41C1F2D1500C4F936 /* CoreAudioHelper.cpp in Sources */,
 				8ADF7A8E1C1EFE9400C4F936 /* main.m in Sources */,
 				8A9757041C204EAA00F20BD7 /* SPDIFAudioEncoder.cpp in Sources */,
-				8A97570B1C220EDD00F20BD7 /* ForwardingInputContext.cpp in Sources */,
+				8A97570B1C220EDD00F20BD7 /* ForwardingInputTap.cpp in Sources */,
 				8ADF7A8B1C1EFE9400C4F936 /* AppDelegate.mm in Sources */,
 				8A65D6BD1C26F50E0071EBBE /* ForwardingChainIdentifier.m in Sources */,
 			);

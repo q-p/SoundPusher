@@ -1,5 +1,5 @@
 //
-//  ForwardingInputContext.cpp
+//  ForwardingInputTap.cpp
 //  VirtualSound
 //
 //  Created by Daniel Vollmer on 16/12/2015.
@@ -11,11 +11,11 @@
 #include <cassert>
 #include <cstring>
 
-#include "ForwardingInputContext.hpp"
+#include "ForwardingInputTap.hpp"
 #include "DigitalOutputContext.hpp"
 
 
-ForwardingInputContext::ForwardingInputContext(AudioObjectID device, AudioObjectID stream,
+ForwardingInputTap::ForwardingInputTap(AudioObjectID device, AudioObjectID stream,
   DigitalOutputContext &outContext)
 : _device(device), _stream(stream)
 , _format(outContext.GetInputFormat()), _outContext(outContext)
@@ -25,14 +25,16 @@ ForwardingInputContext::ForwardingInputContext(AudioObjectID device, AudioObject
   if (status != noErr)
     throw CAHelper::CoreAudioException(status);
 
+  _numBufferedFrames.store(0, std::memory_order_relaxed);
+  _outContext.SetInputBufferNumFramesPointer(&_numBufferedFrames);
+
   _planarFrames.resize(outContext.GetNumFramesPerPacket() * _format.mChannelsPerFrame, 0.0f);
   _planarInputPointers.resize(_format.mChannelsPerFrame);
   for (auto i = decltype(_format.mChannelsPerFrame){0}; i < _format.mChannelsPerFrame; ++i)
     _planarInputPointers[i] = _planarFrames.data() + i * outContext.GetNumFramesPerPacket();
-  _numBufferedFrames = 0;
 }
 
-ForwardingInputContext::~ForwardingInputContext()
+ForwardingInputTap::~ForwardingInputTap()
 {
   if (_isRunning)
     Stop();
@@ -40,16 +42,16 @@ ForwardingInputContext::~ForwardingInputContext()
 }
 
 
-void ForwardingInputContext::Start()
+void ForwardingInputTap::Start()
 {
   if (_isRunning)
     return;
-  OSStatus status = AudioDeviceStart(_device, _deviceIOProcID);
+  OSStatus status = AudioDeviceStart(_device, _deviceIOProcID);;
   if (status != noErr)
     throw CAHelper::CoreAudioException(status);
 }
 
-void ForwardingInputContext::Stop()
+void ForwardingInputTap::Stop()
 {
   if (!_isRunning)
     return;
@@ -87,11 +89,11 @@ static const std::array<DeinterleaveFunc, 7> Deinterleavers = {{
 }};
 
 
-OSStatus ForwardingInputContext::DeviceIOProcFunc(AudioObjectID inDevice, const AudioTimeStamp* inNow,
+OSStatus ForwardingInputTap::DeviceIOProcFunc(AudioObjectID inDevice, const AudioTimeStamp* inNow,
   const AudioBufferList* inInputData, const AudioTimeStamp* inInputTime, AudioBufferList* outOutputData,
   const AudioTimeStamp* inOutputTime, void* inClientData)
 {
-  ForwardingInputContext *me = static_cast<ForwardingInputContext *>(inClientData);
+  ForwardingInputTap *me = static_cast<ForwardingInputTap *>(inClientData);
   const auto numFramesPerPacket = me->_outContext.GetNumFramesPerPacket();
   assert(inInputData->mNumberBuffers == 1);
   assert(inInputData->mBuffers[0].mNumberChannels == me->_format.mChannelsPerFrame);
@@ -99,25 +101,27 @@ OSStatus ForwardingInputContext::DeviceIOProcFunc(AudioObjectID inDevice, const 
 
   const float *input = static_cast<const float *>(inInputData->mBuffers[0].mData);
   uint32_t available = inInputData->mBuffers[0].mDataByteSize / (me->_format.mChannelsPerFrame * sizeof (float));
+  auto numBufferedFrames = me->_numBufferedFrames.load(std::memory_order_relaxed);
   while (available > 0)
   {
-    assert(me->_numBufferedFrames < numFramesPerPacket);
+    assert(numBufferedFrames < numFramesPerPacket);
     { // copy as many samples as we have space for (which might or might not be a full packet)
-      const uint32_t bufferSpace = numFramesPerPacket - me->_numBufferedFrames;
+      const uint32_t bufferSpace = numFramesPerPacket - numBufferedFrames;
       const uint32_t num = std::min(available, bufferSpace);
       Deinterleavers[me->_format.mChannelsPerFrame](num, input, numFramesPerPacket,
-        me->_planarFrames.data() + me->_numBufferedFrames);
-      me->_numBufferedFrames += num;
+        me->_planarFrames.data() + numBufferedFrames);
+      numBufferedFrames += num;
       available -= num;
-      input += num;
+      input += num * me->_format.mChannelsPerFrame;
     }
-    assert(me->_numBufferedFrames <= numFramesPerPacket);
-    if (me->_numBufferedFrames == numFramesPerPacket)
+    assert(numBufferedFrames <= numFramesPerPacket);
+    if (numBufferedFrames == numFramesPerPacket)
     { // let's encode (greedily, on this (the input) thread
-      me->_outContext.EncodeAndAppendPacket(me->_numBufferedFrames,
+      me->_outContext.EncodeAndAppendPacket(numBufferedFrames,
         static_cast<uint32_t>(me->_planarInputPointers.size()), me->_planarInputPointers.data());
-      me->_numBufferedFrames = 0;
+      numBufferedFrames = 0;
     }
   }
+  me->_numBufferedFrames.store(numBufferedFrames, std::memory_order_relaxed);
   return noErr;
 }

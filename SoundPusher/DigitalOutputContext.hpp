@@ -10,6 +10,7 @@
 #define DigitalOutputContext_hpp
 
 #include <vector>
+#include <atomic>
 #include "CoreAudio/CoreAudio.h"
 #include "TPCircularBuffer.h"
 
@@ -34,11 +35,13 @@ struct DigitalOutputContext
   uint32_t GetNumFramesPerPacket() const { return _encoder.GetNumFramesPerPacket(); }
   /// @return the input format expected by EncodeAndAppendPacket().
   const AudioStreamBasicDescription &GetInputFormat() const { return _encoder.GetInFormat(); }
+  /// Sets the pointer to the number of frames in the input buffer
+  void SetInputBufferNumFramesPointer(std::atomic<uint32_t> *inputBufferNumFrames) { _inputBufferNumFrames = inputBufferNumFrames; }
   /// Encodes the given planar input frames and appends them to the buffer for this output context.
   /**
    * Is called by a different thread, but as long as it's only one this is ok, as the buffer is thread-safe for single
    * write and consumer. The consumer is our IOProc, the producer is the caller of this function (which is the IOProc
-   * of the ForwardingInputContext).
+   * of the ForwardingInputTap).
    */
   void EncodeAndAppendPacket(const uint32_t numFrames, const uint32_t numChannels, const float **inputFrames);
 
@@ -70,6 +73,18 @@ protected:
 
   /// The encoder for our output packets (not used by us except for EncodeAndAppendPacket()).
   SPDIFAudioEncoder _encoder;
+
+  /// Pointer to the number of frames in the input buffer.
+  std::atomic<uint32_t> *_inputBufferNumFrames;
+
+  /// How many frames we want to have in the input buffer at the time of a (packed) output buffer interrupt.
+  uint32_t _desiredInputFramesAtOutput;
+
+  /// How often we've had to provide silence because there was no data in our output buffer.
+  uint32_t _numOutputBufferUnderruns;
+
+  /// How many buffers in a row we provided successfully (i.e. without falling back to silence).
+  uint32_t _numConsecutiveBuffers;
 
   /// Precomputed, digitally encoded silence (for when we have no other encoded packets).
   std::vector<uint8_t> _encodedSilence;

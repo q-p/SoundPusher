@@ -33,9 +33,14 @@ DigitalOutputContext::DigitalOutputContext(AudioObjectID device, AudioObjectID s
   const AudioStreamBasicDescription &format, const AudioChannelLayoutTag channelLayoutTag)
 : _device(device), _stream(stream), _format(format), _channelLayoutTag(channelLayoutTag)
 , _encoder(GetBestInputFormatForOutputFormat(_format, _channelLayoutTag), _channelLayoutTag, _format)
+, _inputBufferNumFrames(nullptr), _desiredInputFramesAtOutput(0), _numOutputBufferUnderruns(0), _numConsecutiveBuffers(0)
 , _deviceIOProcID(nullptr), _isRunning(false)
 , _hogger(_device, true), _originalFormat(_stream, format)
 {
+  OSStatus status = AudioDeviceCreateIOProcID(_device, DeviceIOProcFunc, this, &_deviceIOProcID);
+  if (status != noErr)
+    throw CAHelper::CoreAudioException(status);
+
   { // pre-encode silence (in case we run out of input data)
     std::vector<float> zeros(_encoder.GetNumFramesPerPacket(), 0.0f);
     // encode the same zeros for each channel
@@ -47,10 +52,6 @@ DigitalOutputContext::DigitalOutputContext(AudioObjectID device, AudioObjectID s
     if (silenceSize != format.mBytesPerPacket)
       throw std::runtime_error("Encoded silence has wrong size");
   }
-
-  OSStatus status = AudioDeviceCreateIOProcID(_device, DeviceIOProcFunc, this, &_deviceIOProcID);
-  if (status != noErr)
-    throw CAHelper::CoreAudioException(status);
 
   TPCircularBufferInit(&_packetBuffer, 3 * _encoder.MaxBytesPerPacket);
 }
@@ -81,6 +82,9 @@ void DigitalOutputContext::Start()
 {
   if (_isRunning)
     return;
+  _desiredInputFramesAtOutput = 0;
+  _numOutputBufferUnderruns = 0;
+  _numConsecutiveBuffers = 0;
   OSStatus status = AudioDeviceStart(_device, _deviceIOProcID);
   if (status != noErr)
     throw CAHelper::CoreAudioException(status);
@@ -104,23 +108,48 @@ OSStatus DigitalOutputContext::DeviceIOProcFunc(AudioObjectID inDevice, const Au
   assert(outOutputData->mNumberBuffers == 1);
   assert(outOutputData->mBuffers[0].mDataByteSize <= me->_encodedSilence.size());
 
+  const auto numFrameIncrement = me->_format.mFramesPerPacket / 6; // how many frames to add (or less) to the input buffer
   int32_t availableBytes = 0;
   auto buffer = static_cast<uint8_t *>(TPCircularBufferTail(&me->_packetBuffer, &availableBytes));
   if (availableBytes >= me->_format.mBytesPerPacket)
   {
-    // consume excess packets to minimize latency
-    int32_t numConsumed = me->_format.mBytesPerPacket * (availableBytes / me->_format.mBytesPerPacket);
-//    if (numConsumed > me->_format.mBytesPerPacket)
-//      printf("consumed extra packet(s) (%i bytes in total, one is %i)\n", numConsumed, me->_format.mBytesPerPacket);
-    buffer += numConsumed - me->_format.mBytesPerPacket; // grab the newest packet
-    memcpy(outOutputData->mBuffers[0].mData, buffer, outOutputData->mBuffers[0].mDataByteSize);
+    uint32_t numExtraBytesToConsume = 0;
+    const uint32_t numExtraPackets = (availableBytes / me->_format.mBytesPerPacket) - 1u;
+
+    // optimize output latency by consuming excess compressed packets
+    if (numExtraPackets > 0)
+      numExtraBytesToConsume = numExtraPackets * me->_format.mBytesPerPacket;
+
+    memcpy(outOutputData->mBuffers[0].mData, buffer + numExtraBytesToConsume, outOutputData->mBuffers[0].mDataByteSize);
     // note: we always consume whole packet(s), even if the request is for less
-    TPCircularBufferConsume(&me->_packetBuffer, numConsumed);
+    TPCircularBufferConsume(&me->_packetBuffer, me->_format.mBytesPerPacket + numExtraBytesToConsume);
+
+    ++me->_numConsecutiveBuffers;
+
+    // attempt reduce extra input latency (i.e. drop some input buffer contents right now)
+    const auto availableInputFrames = me->_inputBufferNumFrames->load(std::memory_order_relaxed);
+    if (availableInputFrames > me->_desiredInputFramesAtOutput)
+    {
+//      printf("OutIOProc: %u input frames at output time, dropping %u frames\n", availableInputFrames, availableInputFrames - me->_desiredInputFramesAtOutput);
+      me->_inputBufferNumFrames->store(me->_desiredInputFramesAtOutput, std::memory_order_relaxed);
+      // we drop the newer frames instead of the stale ones so we don't have to copy around
+    }
+
+    // decrease desired input buffer size if we managed 2 seconds of consecutive buffers
+    if (me->_desiredInputFramesAtOutput >= numFrameIncrement && me->_numConsecutiveBuffers > 2 * me->_format.mSampleRate / me->_format.mFramesPerPacket)
+    {
+      me->_desiredInputFramesAtOutput -= numFrameIncrement;
+      printf("OutIOProc: hit %u consecutive buffers, reducing target input frames to %u\n", me->_numConsecutiveBuffers, me->_desiredInputFramesAtOutput);
+      me->_numConsecutiveBuffers = 0; // let's see whether we can keep it up
+    }
   }
   else
   { // provide silence
-    printf("silence (%u avail)\n", availableBytes);
     memcpy(outOutputData->mBuffers[0].mData, me->_encodedSilence.data(), outOutputData->mBuffers[0].mDataByteSize);
+    if (me->_desiredInputFramesAtOutput + numFrameIncrement < me->_format.mFramesPerPacket)
+      me->_desiredInputFramesAtOutput += numFrameIncrement;
+    me->_numConsecutiveBuffers = 0;
+    printf("OutIOProc: %u/%u available, increasing target input frames to %u\n", availableBytes, outOutputData->mBuffers[0].mDataByteSize, me->_desiredInputFramesAtOutput);
   }
   return noErr;
 }

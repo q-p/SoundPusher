@@ -18,7 +18,7 @@ extern "C" {
 } // end extern "C"
 #include "CoreAudioHelper.hpp"
 #include "DigitalOutputContext.hpp"
-#include "ForwardingInputContext.hpp"
+#include "ForwardingInputTap.hpp"
 
 #import "ForwardingChainIdentifier.h"
 #import "AppDelegate.h"
@@ -80,7 +80,7 @@ static std::vector<Device> GetDevicesWithDigitalOutput(const std::vector<AudioOb
       auto digitalFormats = decltype(formats){};
       std::copy_if(formats.begin(), formats.end(), std::back_inserter(digitalFormats), [](const AudioStreamBasicDescription &format)
       {
-        if (format.mSampleRate < 48000.0)
+        if (format.mSampleRate != 48000.0)
           return false;
         return format.mFormatID == kAudioFormatAC3 ||
                format.mFormatID == kAudioFormat60958AC3 ||
@@ -89,12 +89,7 @@ static std::vector<Device> GetDevicesWithDigitalOutput(const std::vector<AudioOb
 
       });
       if (!digitalFormats.empty())
-      {
-        // sort by sample rate, so first entry will be lowest sample-rate >= 48000.0
-        std::sort(digitalFormats.begin(), digitalFormats.end(), [](const AudioStreamBasicDescription &left, AudioStreamBasicDescription &right)
-          { return left.mSampleRate < right.mSampleRate; });
         digitalStreams.emplace_back(Stream{stream, std::move(digitalFormats)});
-      }
     }
     if (!digitalStreams.empty())
       result.emplace_back(Device{device, std::move(digitalStreams)});
@@ -141,12 +136,12 @@ struct ForwardingChain
   , _output(outDevice, outStream, outFormat, channelLayoutTag)
   , _input(inDevice, inStream, _output)
   {
-      OSStatus status = AudioObjectAddPropertyListener(_output._device, &DeviceAliveAddress, DeviceAliveListenerFunc, this);
-      if (status != noErr)
-        NSLog(@"Could not register alive-listener for output device %u", _output._device);
-      status = AudioObjectAddPropertyListener(_input._device, &DeviceAliveAddress, DeviceAliveListenerFunc, this);
-      if (status != noErr)
-        NSLog(@"Could not register alive-listener for input device %u", _input._device);
+    OSStatus status = AudioObjectAddPropertyListener(_output._device, &DeviceAliveAddress, DeviceAliveListenerFunc, this);
+    if (status != noErr)
+      NSLog(@"Could not register alive-listener for output device %u", _output._device);
+    status = AudioObjectAddPropertyListener(_input._device, &DeviceAliveAddress, DeviceAliveListenerFunc, this);
+    if (status != noErr)
+      NSLog(@"Could not register alive-listener for input device %u", _input._device);
   }
 
   ~ForwardingChain()
@@ -162,7 +157,7 @@ struct ForwardingChain
   ForwardingChainIdentifier *_identifier;
   CAHelper::DefaultDeviceChanger _defaultDevice;
   DigitalOutputContext _output;
-  ForwardingInputContext _input;
+  ForwardingInputTap _input;
 };
 
 // our status menu item
@@ -232,6 +227,7 @@ static void AttemptToStartMissingChains()
       auto newChain = std::make_unique<ForwardingChain>(attempt, inDevice._device, inDevice._streams.front()._stream,
         outDevice._device, outStream._stream, outStream._formats.front(),
         kAudioChannelLayoutTag_MPEG_5_1_C);
+
       newChain->_input.Start();
       newChain->_output.Start();
 
@@ -291,6 +287,7 @@ static void AttemptToStartMissingChains()
         auto newChain = std::make_unique<ForwardingChain>(identifier, inDevice._device, inDevice._streams.front()._stream,
           outDevice._device, outStream._stream, outStream._formats.front(),
           kAudioChannelLayoutTag_MPEG_5_1_C);
+
         newChain->_input.Start();
         newChain->_output.Start();
 

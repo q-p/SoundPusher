@@ -1,15 +1,16 @@
 //
-//  ForwardingInputContext.hpp
+//  ForwardingInputTap.hpp
 //  VirtualSound
 //
 //  Created by Daniel Vollmer on 16/12/2015.
 //
 //
 
-#ifndef ForwardingInputContext_hpp
-#define ForwardingInputContext_hpp
+#ifndef ForwardingInputTap_hpp
+#define ForwardingInputTap_hpp
 
 #include <vector>
+#include <atomic>
 #include "CoreAudio/CoreAudio.h"
 
 #include "CoreAudioHelper.hpp"
@@ -18,16 +19,17 @@
 struct DigitalOutputContext;
 
 /// Takes input from device.stream and forwards it to the outContext as soon as a full packet has been buffered.
-struct ForwardingInputContext
+struct ForwardingInputTap
 {
   /**
-   * @param device The device whose data to forward data to the outContext.
+   * @param device The device whose data to tap and forward to the outContext.
    * @param stream The input stream on device to forward.
    * @param outContext The output context to forward data to. Must outlive us.
    */
-  ForwardingInputContext(AudioObjectID device, AudioObjectID stream, DigitalOutputContext &outContext);
+  ForwardingInputTap(AudioObjectID device, AudioObjectID stream, DigitalOutputContext &outContext);
 
-  ~ForwardingInputContext();
+  ~ForwardingInputTap();
+
 
 
   /// Starts IO for the device.
@@ -51,10 +53,11 @@ protected:
   /// The output context to which we send any received data.
   DigitalOutputContext &_outContext;
 
+  /// The number of frames currently buffered.
+  std::atomic<uint32_t> _numBufferedFrames;
+
   /// These point back into the correct offsets into _planarFrames
   std::vector<const float *> _planarInputPointers;
-  /// The number of frames currently buffered.
-  uint32_t _numBufferedFrames;
 
   /// Backing storage for all planes.
   std::vector<float> _planarFrames;
@@ -66,4 +69,4 @@ protected:
   bool _isRunning;
 };
 
-#endif /* ForwardingInputContext_hpp */
+#endif /* ForwardingInputTap_hpp */
