@@ -164,7 +164,10 @@ static UInt64					gDevice_TimeLineSeed			= 1;
 // computed positions without consuming / producing
 static TPCircularBuffer			gDevice_RingBuffer;
 
-uint32_t						gDevice_LastWriteEnd			= 0;
+// One past the last frame (not modulo buffer size) we've written
+SInt64							gDevice_LastWriteEndInFrames	= 0;
+// The sliding difference between where we read and write
+SInt64							gDevice_ReadOffsetInFrames		= 0;
 
 static bool						gStream_Input_IsActive			= true;
 static bool						gStream_Output_IsActive			= true;
@@ -2628,6 +2631,9 @@ static OSStatus	LoopbackAudio_StartIO(AudioServerPlugInDriverRef inDriver, Audio
 		TPCircularBufferInit(&gDevice_RingBuffer, kDevice_RingBuffNumFrames * gDevice_CurrentFormat.mBytesPerFrame);
 		memset(gDevice_RingBuffer.buffer, 0, gDevice_RingBuffer.length);
 
+		gDevice_LastWriteEndInFrames = 0;
+		gDevice_ReadOffsetInFrames = 0;
+
 		gDevice_TimeLineSeed = 1;
 		gDevice_NumberTimeStamps = 0;
 		gDevice_AnchorSampleTime = 0;
@@ -2828,27 +2834,30 @@ static OSStatus	LoopbackAudio_DoIOOperation(AudioServerPlugInDriverRef inDriver,
 		case kAudioServerPlugInIOOperationReadInput:
 		{ // provide input from our internal buffer
 			// read back from where we last wrote
-			const UInt32 readBegin = (numFramesInRingBuffer + gDevice_LastWriteEnd - inIOBufferFrameSize) % numFramesInRingBuffer;
-//			const UInt32 readBegin = ((SInt64)inIOCycleInfo->mInputTime.mSampleTime + inIOCycleInfo->mNominalIOBufferFrameSize) % numFramesInRingBuffer;
-//			const UInt32 readEnd = (readBegin + inIOBufferFrameSize) % numFramesInRingBuffer;
-			uint8_t *bufferBegin = gDevice_RingBuffer.buffer + readBegin * gDevice_CurrentFormat.mBytesPerFrame;
 
-//			if (writeEnd - readEnd >= numFramesInRingBuffer / 2)
-//			{
-//				DebugMsg("LoopbackAudio_ReadInput: reading %i frames from sampleIndex %i, but lastWriteEnd %u, adjusted to %u\n", inIOBufferFrameSize, readBegin, gDevice_LastWriteEnd, readBeginAdjusted);
-//				bufferBegin = gDevice_RingBuffer.buffer + readBeginAdjusted * gDevice_CurrentFormat.mBytesPerFrame;
-//			}
-
+			SInt64 readBegin = (SInt64)inIOCycleInfo->mInputTime.mSampleTime + gDevice_ReadOffsetInFrames;
+			if (readBegin < 0 || gDevice_LastWriteEndInFrames == 0)
+			{ // either reading before the beginning, or before the first write
+				memset(ioMainBuffer, 0, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame);
+			}
+			SInt64 readEnd = readBegin + inIOBufferFrameSize;
+			if (readEnd > gDevice_LastWriteEndInFrames)
+			{ // let's slide the read-offset
+				gDevice_ReadOffsetInFrames -= readEnd - gDevice_LastWriteEndInFrames;
+				readBegin = (SInt64)inIOCycleInfo->mInputTime.mSampleTime + gDevice_ReadOffsetInFrames;
+				readEnd = readBegin + inIOBufferFrameSize;
+				DebugMsg("LoopbackAudio_ReadInput: adjusted read offset to %lld", gDevice_ReadOffsetInFrames);
+			}
+			uint8_t *bufferBegin = gDevice_RingBuffer.buffer + (readBegin % numFramesInRingBuffer) * gDevice_CurrentFormat.mBytesPerFrame;
 			memcpy(ioMainBuffer, bufferBegin, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame);
 			break;
 		}
 		case kAudioServerPlugInIOOperationWriteMix:
 		{ // write input to our internal buffer
-			const UInt32 writeBegin = ((SInt64)inIOCycleInfo->mOutputTime.mSampleTime) % numFramesInRingBuffer;
-			uint8_t *bufferBegin = gDevice_RingBuffer.buffer + writeBegin * gDevice_CurrentFormat.mBytesPerFrame;
+			const SInt64 writeBegin = (SInt64)inIOCycleInfo->mOutputTime.mSampleTime;
+			uint8_t *bufferBegin = gDevice_RingBuffer.buffer + (writeBegin % numFramesInRingBuffer) * gDevice_CurrentFormat.mBytesPerFrame;
 			memcpy(bufferBegin, ioMainBuffer, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame);
-			gDevice_LastWriteEnd = (writeBegin + inIOBufferFrameSize) % numFramesInRingBuffer;
-//			DebugMsg("LoopbackAudio_WriteMix: writing %i frames to writeBegin %i\n", inIOBufferFrameSize, writeBegin);
+			gDevice_LastWriteEndInFrames = writeBegin + inIOBufferFrameSize;
 			break;
 		}
 	}
