@@ -167,9 +167,25 @@ NSMutableSet<ForwardingChainIdentifier *> *_desiredActiveChains = [NSMutableSet 
 // the actual instances of running chains
 std::vector<std::unique_ptr<ForwardingChain>> _chains;
 
+
+static void UpdateStatusItem()
+{
+  if (_chains.empty())
+  {
+    _statusItem.button.image = [NSImage imageNamed:@"CableCutTemplate"];
+    _statusItem.button.appearsDisabled = YES;
+  }
+  else
+  {
+    _statusItem.button.image = [NSImage imageNamed:@"CableTemplate"];
+    _statusItem.button.appearsDisabled = NO;
+  }
+}
+
 static OSStatus DeviceAliveListenerFunc(AudioObjectID inObjectID, UInt32 inNumberAddresses,
   const AudioObjectPropertyAddress *inAddresses, void *inClientData)
 {
+  const bool chainsWereEmpty  = _chains.empty();
   ForwardingChain *oldChain = static_cast<ForwardingChain *>(inClientData);
   for (auto it = _chains.begin(); it != _chains.end(); /* in body */)
   {
@@ -182,6 +198,14 @@ static OSStatus DeviceAliveListenerFunc(AudioObjectID inObjectID, UInt32 inNumbe
     else
       ++it;
   }
+
+  if (chainsWereEmpty != _chains.empty())
+  {
+    dispatch_async(dispatch_get_main_queue(), ^{
+      UpdateStatusItem();
+    });
+  }
+
   return noErr;
 }
 
@@ -239,11 +263,13 @@ static void AttemptToStartMissingChains()
       NSLog(@"Could not initialize forwarding chain %@: %s", attempt, e.what());
     }
   }
+  UpdateStatusItem();
 }
 
 
 - (void)toggleOutputDeviceAction:(NSMenuItem *)item
 {
+  const bool chainsWereEmpty = _chains.empty();
   ForwardingChainIdentifier *identifier = item.representedObject;
   if (item.state == NSOnState)
   { // should try to stop chain
@@ -303,6 +329,8 @@ static void AttemptToStartMissingChains()
       break;
     }
   }
+  if (_chains.empty() != chainsWereEmpty)
+    UpdateStatusItem();
 }
 
 
@@ -396,7 +424,8 @@ static void AttemptToStartMissingChains()
   {
     NSStatusBar *bar = [NSStatusBar systemStatusBar];
     _statusItem = [bar statusItemWithLength:NSSquareStatusItemLength];
-    _statusItem.button.image = [NSImage imageNamed:NSImageNameSlideshowTemplate];
+    _statusItem.button.image = [NSImage imageNamed:@"CableCutTemplate"];
+    _statusItem.button.appearsDisabled = YES;
     [_statusItem setMenu:self.menuForStatusItem];
   }
 
