@@ -166,7 +166,7 @@ static TPCircularBuffer			gDevice_RingBuffer;
 
 // One past the last frame (not modulo buffer size) we've written
 SInt64							gDevice_LastWriteEndInFrames	= 0;
-// The sliding difference between where we read and write
+// The sliding difference between where we read and write (usually positive because output happens at a later time than input for the same set of buffers)
 SInt64							gDevice_ReadOffsetInFrames		= 0;
 
 static bool						gStream_Input_IsActive			= true;
@@ -2833,20 +2833,24 @@ static OSStatus	LoopbackAudio_DoIOOperation(AudioServerPlugInDriverRef inDriver,
 	{
 		case kAudioServerPlugInIOOperationReadInput:
 		{ // provide input from our internal buffer
-			// read back from where we last wrote
+			if (gDevice_LastWriteEndInFrames == 0)
+			{ // reading before the first write happened, so output silence
+				memset(ioMainBuffer, 0, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame);
+				break;
+			}
+			if (gDevice_ReadOffsetInFrames ==0)
+			{ // this is the first read *after* a write happened, so set up the initial read-offset
+				gDevice_ReadOffsetInFrames = gDevice_LastWriteEndInFrames - (SInt64)inIOCycleInfo->mInputTime.mSampleTime - inIOBufferFrameSize;
+			}
 
 			SInt64 readBegin = (SInt64)inIOCycleInfo->mInputTime.mSampleTime + gDevice_ReadOffsetInFrames;
-			if (readBegin < 0 || gDevice_LastWriteEndInFrames == 0)
-			{ // either reading before the beginning, or before the first write
-				memset(ioMainBuffer, 0, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame);
-			}
 			SInt64 readEnd = readBegin + inIOBufferFrameSize;
 			if (readEnd > gDevice_LastWriteEndInFrames)
-			{ // let's slide the read-offset
+			{ // let's slide the read-offset so we read the latest written data (but no more than that)
+				DebugMsg("LoopbackAudio_ReadInput: adjusting read offset from %lld to %lld", gDevice_ReadOffsetInFrames, gDevice_ReadOffsetInFrames - readEnd + gDevice_LastWriteEndInFrames);
 				gDevice_ReadOffsetInFrames -= readEnd - gDevice_LastWriteEndInFrames;
 				readBegin = (SInt64)inIOCycleInfo->mInputTime.mSampleTime + gDevice_ReadOffsetInFrames;
 				readEnd = readBegin + inIOBufferFrameSize;
-				DebugMsg("LoopbackAudio_ReadInput: adjusted read offset to %lld", gDevice_ReadOffsetInFrames);
 			}
 			uint8_t *bufferBegin = gDevice_RingBuffer.buffer + (readBegin % numFramesInRingBuffer) * gDevice_CurrentFormat.mBytesPerFrame;
 			memcpy(ioMainBuffer, bufferBegin, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame);
