@@ -19,6 +19,13 @@
         </customObject>
         <menu title="SoundPusher" systemMenu="apple" autoenablesItems="NO" id="xPn-p0-vfY" userLabel="StatusItemMenu">
             <items>
+                <menuItem isSeparatorItem="YES" id="8wS-BH-wWJ"/>
+                <menuItem title="Open Website..." id="eOH-0X-OB3">
+                    <modifierMask key="keyEquivalentModifierMask"/>
+                    <connections>
+                        <action selector="openHomepage:" target="Voe-Tx-rLC" id="bEt-eZ-WRf"/>
+                    </connections>
+                </menuItem>
                 <menuItem isSeparatorItem="YES" id="36S-ND-42N"/>
                 <menuItem title="Quit SoundPusher" id="gZv-Ae-GXd">
                     <modifierMask key="keyEquivalentModifierMask"/>

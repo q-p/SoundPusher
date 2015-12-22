@@ -166,6 +166,8 @@ NSStatusItem *_statusItem = nil;
 NSMutableSet<ForwardingChainIdentifier *> *_desiredActiveChains = [NSMutableSet new];
 // the actual instances of running chains
 std::vector<std::unique_ptr<ForwardingChain>> _chains;
+// how many menu items were in the menu originally (because we keep rebuilding parts of it)
+NSInteger _numOriginalMenuItems = 2;
 
 
 static void UpdateStatusItem()
@@ -338,7 +340,7 @@ static void AttemptToStartMissingChains()
 {
   bool showDebugInfo = ([NSEvent modifierFlags] & NSAlternateKeyMask) != 0;
   // remove old chain menu items
-  while (menu.numberOfItems > 2)
+  while (menu.numberOfItems > _numOriginalMenuItems)
     [menu removeItemAtIndex:0];
 
   const auto allDevices = CAHelper::GetDevices();
@@ -397,6 +399,11 @@ static void AttemptToStartMissingChains()
   }
 }
 
+- (IBAction)openHomepage:(id)sender
+{
+  [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:@"https://github.com/q-p/SoundPusher"]];
+}
+
 - (void) receiveSleepNote: (NSNotification*) note
 {
   _chains.clear();
@@ -420,6 +427,8 @@ static void AttemptToStartMissingChains()
 //#endif
   avcodec_register_all();
   av_register_all();
+
+  _numOriginalMenuItems = self.menuForStatusItem.numberOfItems;
 
   {
     NSStatusBar *bar = [NSStatusBar systemStatusBar];
