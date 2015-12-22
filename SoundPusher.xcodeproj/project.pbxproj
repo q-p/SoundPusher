@@ -11,9 +11,9 @@
 		8A65D6AC1C26C1790071EBBE /* libavcodec.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = 8A65D6A91C26C1790071EBBE /* libavcodec.dylib */; };
 		8A65D6AD1C26C1790071EBBE /* libavformat.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = 8A65D6AA1C26C1790071EBBE /* libavformat.dylib */; };
 		8A65D6AE1C26C1790071EBBE /* libavutil.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = 8A65D6AB1C26C1790071EBBE /* libavutil.dylib */; };
-		8A65D6B81C26CE540071EBBE /* libavcodec.dylib in CopyFiles */ = {isa = PBXBuildFile; fileRef = 8A65D6A91C26C1790071EBBE /* libavcodec.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
-		8A65D6B91C26CE540071EBBE /* libavformat.dylib in CopyFiles */ = {isa = PBXBuildFile; fileRef = 8A65D6AA1C26C1790071EBBE /* libavformat.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
-		8A65D6BA1C26CE540071EBBE /* libavutil.dylib in CopyFiles */ = {isa = PBXBuildFile; fileRef = 8A65D6AB1C26C1790071EBBE /* libavutil.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		8A65D6B81C26CE540071EBBE /* libavcodec.dylib in Copy FFmpeg libs */ = {isa = PBXBuildFile; fileRef = 8A65D6A91C26C1790071EBBE /* libavcodec.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		8A65D6B91C26CE540071EBBE /* libavformat.dylib in Copy FFmpeg libs */ = {isa = PBXBuildFile; fileRef = 8A65D6AA1C26C1790071EBBE /* libavformat.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		8A65D6BA1C26CE540071EBBE /* libavutil.dylib in Copy FFmpeg libs */ = {isa = PBXBuildFile; fileRef = 8A65D6AB1C26C1790071EBBE /* libavutil.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		8A65D6BD1C26F50E0071EBBE /* ForwardingChainIdentifier.m in Sources */ = {isa = PBXBuildFile; fileRef = 8A65D6BC1C26F50E0071EBBE /* ForwardingChainIdentifier.m */; };
 		8A7C0D161C1DD24A006EC2C6 /* LoopbackAudio.c in Sources */ = {isa = PBXBuildFile; fileRef = 8A7C0D151C1DD24A006EC2C6 /* LoopbackAudio.c */; };
 		8A7C0D181C1DD691006EC2C6 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 8A7C0D171C1DD691006EC2C6 /* Localizable.strings */; };
@@ -31,16 +31,17 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
-		8A65D6B71C26CE3B0071EBBE /* CopyFiles */ = {
+		8A65D6B71C26CE3B0071EBBE /* Copy FFmpeg libs */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 12;
 			dstPath = "";
 			dstSubfolderSpec = 10;
 			files = (
-				8A65D6B81C26CE540071EBBE /* libavcodec.dylib in CopyFiles */,
-				8A65D6B91C26CE540071EBBE /* libavformat.dylib in CopyFiles */,
-				8A65D6BA1C26CE540071EBBE /* libavutil.dylib in CopyFiles */,
+				8A65D6B81C26CE540071EBBE /* libavcodec.dylib in Copy FFmpeg libs */,
+				8A65D6B91C26CE540071EBBE /* libavformat.dylib in Copy FFmpeg libs */,
+				8A65D6BA1C26CE540071EBBE /* libavutil.dylib in Copy FFmpeg libs */,
 			);
+			name = "Copy FFmpeg libs";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
@@ -52,6 +53,7 @@
 		8A65D6AB1C26C1790071EBBE /* libavutil.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libavutil.dylib; path = lib/libavutil.dylib; sourceTree = FFMPEG_HOME; };
 		8A65D6BB1C26F50E0071EBBE /* ForwardingChainIdentifier.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ForwardingChainIdentifier.h; sourceTree = "<group>"; };
 		8A65D6BC1C26F50E0071EBBE /* ForwardingChainIdentifier.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ForwardingChainIdentifier.m; sourceTree = "<group>"; };
+		8A6E3B161C29CB6E00E0918D /* SoundPusher.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = SoundPusher.entitlements; sourceTree = "<group>"; };
 		8A7C0D0E1C1DCDCF006EC2C6 /* LoopbackAudio.driver */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LoopbackAudio.driver; sourceTree = BUILT_PRODUCTS_DIR; };
 		8A7C0D111C1DCDCF006EC2C6 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		8A7C0D151C1DD24A006EC2C6 /* LoopbackAudio.c */ = {isa = PBXFileReference; fileEncoding = 4; indentWidth = 4; lastKnownFileType = sourcecode.c.c; path = LoopbackAudio.c; sourceTree = "<group>"; tabWidth = 4; usesTabs = 1; };
@@ -187,6 +189,7 @@
 		8ADF7A8C1C1EFE9400C4F936 /* Supporting Files */ = {
 			isa = PBXGroup;
 			children = (
+				8A6E3B161C29CB6E00E0918D /* SoundPusher.entitlements */,
 				8ADF7A8D1C1EFE9400C4F936 /* main.m */,
 			);
 			name = "Supporting Files";
@@ -218,7 +221,7 @@
 			buildPhases = (
 				8ADF7A831C1EFE9400C4F936 /* Sources */,
 				8ADF7A841C1EFE9400C4F936 /* Frameworks */,
-				8A65D6B71C26CE3B0071EBBE /* CopyFiles */,
+				8A65D6B71C26CE3B0071EBBE /* Copy FFmpeg libs */,
 				8ADF7A851C1EFE9400C4F936 /* Resources */,
 			);
 			buildRules = (
@@ -237,12 +240,18 @@
 			isa = PBXProject;
 			attributes = {
 				LastUpgradeCheck = 0720;
+				ORGANIZATIONNAME = "[maven] heavy industries";
 				TargetAttributes = {
 					8A7C0D0D1C1DCDCF006EC2C6 = {
 						CreatedOnToolsVersion = 7.2;
 					};
 					8ADF7A861C1EFE9400C4F936 = {
 						CreatedOnToolsVersion = 7.2;
+						SystemCapabilities = {
+							com.apple.Sandbox = {
+								enabled = 1;
+							};
+						};
 					};
 				};
 			};
@@ -382,9 +391,9 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 10.11;
 				INFOPLIST_FILE = LoopbackAudio/Info.plist;
 				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Audio/Plug-Ins/HAL";
-				MACOSX_DEPLOYMENT_TARGET = 10.11;
 				MTL_ENABLE_DEBUG_INFO = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = de.maven.LoopbackAudio;
@@ -427,9 +436,9 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 10.11;
 				INFOPLIST_FILE = LoopbackAudio/Info.plist;
 				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Audio/Plug-Ins/HAL";
-				MACOSX_DEPLOYMENT_TARGET = 10.11;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				PRODUCT_BUNDLE_IDENTIFIER = de.maven.LoopbackAudio;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -445,7 +454,6 @@
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_CXX_LANGUAGE_STANDARD = "c++14";
-				CLANG_CXX_LIBRARY = "libc++";
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
 				CLANG_WARN_BOOL_CONVERSION = YES;
@@ -457,6 +465,7 @@
 				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_ENTITLEMENTS = SoundPusher/SoundPusher.entitlements;
 				CODE_SIGN_IDENTITY = "-";
 				COMBINE_HIDPI_IMAGES = YES;
 				COPY_PHASE_STRIP = NO;
@@ -475,7 +484,6 @@
 				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
 				GCC_WARN_UNDECLARED_SELECTOR = YES;
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
-				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				INFOPLIST_FILE = SoundPusher/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
@@ -496,7 +504,6 @@
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_CXX_LANGUAGE_STANDARD = "c++14";
-				CLANG_CXX_LIBRARY = "libc++";
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
 				CLANG_WARN_BOOL_CONVERSION = YES;
@@ -508,6 +515,7 @@
 				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_ENTITLEMENTS = SoundPusher/SoundPusher.entitlements;
 				CODE_SIGN_IDENTITY = "-";
 				COMBINE_HIDPI_IMAGES = YES;
 				COPY_PHASE_STRIP = YES;
@@ -521,7 +529,6 @@
 				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
 				GCC_WARN_UNDECLARED_SELECTOR = YES;
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
-				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				INFOPLIST_FILE = SoundPusher/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
