@@ -10,6 +10,7 @@
 #include <cctype>
 
 #include "CoreAudioHelper.hpp"
+#include "MiniLogger.hpp"
 
 
 namespace CAHelper {
@@ -144,7 +145,7 @@ DefaultDeviceChanger::DefaultDeviceChanger(const AudioObjectID claimedDevice, co
     status = AudioObjectSetPropertyData(kAudioObjectSystemObject, &DefaultDeviceAddress, 0, NULL, dataSize, &alternativeDevice);
     if (status != noErr)
     {
-      fprintf(stderr, "Could not change default device: %s\n", Get4CCAsString(status).c_str());
+      DefaultLogger.Note("Could not change default device: %s\n", Get4CCAsString(status).c_str());
       return;
     }
     _originalDevice = defaultDevice;
@@ -158,7 +159,7 @@ DefaultDeviceChanger::~DefaultDeviceChanger()
     UInt32 dataSize = sizeof _originalDevice;
     OSStatus status = AudioObjectSetPropertyData(kAudioObjectSystemObject, &DefaultDeviceAddress, 0, NULL, dataSize, &_originalDevice);
     if (status != noErr)
-      fprintf(stderr, "Could not restore default device: %s\n", Get4CCAsString(status).c_str());
+      DefaultLogger.Note("Could not restore default device: %s\n", Get4CCAsString(status).c_str());
   }
 }
 
@@ -207,7 +208,7 @@ DeviceHogger::~DeviceHogger()
   UInt32 dataSize = sizeof pid;
   status = AudioObjectSetPropertyData(_device, &DeviceHogModeAddress, 0, NULL, dataSize, &pid);
   if (status != noErr || pid != -1)
-    fprintf(stderr, "Could not release exclusive access to device %u\n", _device);
+    DefaultLogger.Note("Could not release exclusive access to device %u\n", _device);
 }
 
 //==================================================================================================
@@ -247,7 +248,7 @@ FormatSetter::~FormatSetter()
   status = AudioObjectSetPropertyData(_stream, &StreamPhysicalFormatAddress, 0, NULL, dataSize, &_originalFormat);
   if (status != noErr)
   {
-    fprintf(stderr, "Could not restore original format on stream %u %s\n", _stream, Get4CCAsString(status).c_str());
+    DefaultLogger.Note("Could not restore original format on stream %u %s\n", _stream, Get4CCAsString(status).c_str());
     return;
   }
 }

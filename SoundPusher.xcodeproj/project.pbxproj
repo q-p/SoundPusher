@@ -15,6 +15,7 @@
 		8A65D6B91C26CE540071EBBE /* libavformat.dylib in Copy FFmpeg libs */ = {isa = PBXBuildFile; fileRef = 8A65D6AA1C26C1790071EBBE /* libavformat.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		8A65D6BA1C26CE540071EBBE /* libavutil.dylib in Copy FFmpeg libs */ = {isa = PBXBuildFile; fileRef = 8A65D6AB1C26C1790071EBBE /* libavutil.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		8A65D6BD1C26F50E0071EBBE /* ForwardingChainIdentifier.m in Sources */ = {isa = PBXBuildFile; fileRef = 8A65D6BC1C26F50E0071EBBE /* ForwardingChainIdentifier.m */; };
+		8A6E3B391C2ABE2600E0918D /* MiniLogger.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 8A6E3B371C2ABE2600E0918D /* MiniLogger.cpp */; };
 		8A7C0D161C1DD24A006EC2C6 /* LoopbackAudio.c in Sources */ = {isa = PBXBuildFile; fileRef = 8A7C0D151C1DD24A006EC2C6 /* LoopbackAudio.c */; };
 		8A7C0D181C1DD691006EC2C6 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 8A7C0D171C1DD691006EC2C6 /* Localizable.strings */; };
 		8A8D38EE1C1DE3A500B9A127 /* TPCircularBuffer.c in Sources */ = {isa = PBXBuildFile; fileRef = 8A8D38EC1C1DE3A500B9A127 /* TPCircularBuffer.c */; };
@@ -54,6 +55,8 @@
 		8A65D6BB1C26F50E0071EBBE /* ForwardingChainIdentifier.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ForwardingChainIdentifier.h; sourceTree = "<group>"; };
 		8A65D6BC1C26F50E0071EBBE /* ForwardingChainIdentifier.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ForwardingChainIdentifier.m; sourceTree = "<group>"; };
 		8A6E3B161C29CB6E00E0918D /* SoundPusher.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = SoundPusher.entitlements; sourceTree = "<group>"; };
+		8A6E3B371C2ABE2600E0918D /* MiniLogger.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = MiniLogger.cpp; sourceTree = "<group>"; };
+		8A6E3B381C2ABE2600E0918D /* MiniLogger.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = MiniLogger.hpp; sourceTree = "<group>"; };
 		8A7C0D0E1C1DCDCF006EC2C6 /* LoopbackAudio.driver */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LoopbackAudio.driver; sourceTree = BUILT_PRODUCTS_DIR; };
 		8A7C0D111C1DCDCF006EC2C6 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		8A7C0D151C1DD24A006EC2C6 /* LoopbackAudio.c */ = {isa = PBXFileReference; fileEncoding = 4; indentWidth = 4; lastKnownFileType = sourcecode.c.c; path = LoopbackAudio.c; sourceTree = "<group>"; tabWidth = 4; usesTabs = 1; };
@@ -167,6 +170,8 @@
 			children = (
 				8A65D6BB1C26F50E0071EBBE /* ForwardingChainIdentifier.h */,
 				8A65D6BC1C26F50E0071EBBE /* ForwardingChainIdentifier.m */,
+				8A6E3B371C2ABE2600E0918D /* MiniLogger.cpp */,
+				8A6E3B381C2ABE2600E0918D /* MiniLogger.hpp */,
 				8ADF7A891C1EFE9400C4F936 /* AppDelegate.h */,
 				8ADF7A8A1C1EFE9400C4F936 /* AppDelegate.mm */,
 				8ADF7AA21C1F2D1500C4F936 /* CoreAudioHelper.cpp */,
@@ -316,6 +321,7 @@
 				8A9757041C204EAA00F20BD7 /* SPDIFAudioEncoder.cpp in Sources */,
 				8A97570B1C220EDD00F20BD7 /* ForwardingInputTap.cpp in Sources */,
 				8ADF7A8B1C1EFE9400C4F936 /* AppDelegate.mm in Sources */,
+				8A6E3B391C2ABE2600E0918D /* MiniLogger.cpp in Sources */,
 				8A65D6BD1C26F50E0071EBBE /* ForwardingChainIdentifier.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -391,9 +397,9 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 10.11;
 				INFOPLIST_FILE = LoopbackAudio/Info.plist;
 				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Audio/Plug-Ins/HAL";
+				MACOSX_DEPLOYMENT_TARGET = 10.11;
 				MTL_ENABLE_DEBUG_INFO = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = de.maven.LoopbackAudio;
@@ -436,9 +442,9 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 10.11;
 				INFOPLIST_FILE = LoopbackAudio/Info.plist;
 				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Audio/Plug-Ins/HAL";
+				MACOSX_DEPLOYMENT_TARGET = 10.11;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				PRODUCT_BUNDLE_IDENTIFIER = de.maven.LoopbackAudio;
 				PRODUCT_NAME = "$(TARGET_NAME)";

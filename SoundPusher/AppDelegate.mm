@@ -16,6 +16,7 @@ extern "C" {
 extern "C" {
 #include "LoopbackAudio.h"
 } // end extern "C"
+#include "MiniLogger.hpp"
 #include "CoreAudioHelper.hpp"
 #include "DigitalOutputContext.hpp"
 #include "ForwardingInputTap.hpp"
@@ -56,7 +57,7 @@ struct Device
       return false;
     if (identifier.outStreamIndex >= _streams.size())
     {
-      NSLog(@"Device %@ has %zu streams, but checked one is %zu", _uid, _streams.size(), identifier.outStreamIndex);
+      DefaultLogger.Warn("Device %s has %zu streams, but checked one is %zu", _uid.UTF8String, _streams.size(), identifier.outStreamIndex);
       return false;
     }
     return true;
@@ -138,20 +139,20 @@ struct ForwardingChain
   {
     OSStatus status = AudioObjectAddPropertyListener(_output._device, &DeviceAliveAddress, DeviceAliveListenerFunc, this);
     if (status != noErr)
-      NSLog(@"Could not register alive-listener for output device %u", _output._device);
+      DefaultLogger.Warn("Could not register alive-listener for output device %u", _output._device);
     status = AudioObjectAddPropertyListener(_input._device, &DeviceAliveAddress, DeviceAliveListenerFunc, this);
     if (status != noErr)
-      NSLog(@"Could not register alive-listener for input device %u", _input._device);
+      DefaultLogger.Warn("Could not register alive-listener for input device %u", _input._device);
   }
 
   ~ForwardingChain()
   {
     OSStatus status = AudioObjectRemovePropertyListener(_output._device, &DeviceAliveAddress, DeviceAliveListenerFunc, this);
     if (status != noErr)
-      NSLog(@"Could not remove alive-listener for output device %u", _output._device);
+      DefaultLogger.Warn("Could not remove alive-listener for output device %u", _output._device);
     status = AudioObjectRemovePropertyListener(_input._device, &DeviceAliveAddress, DeviceAliveListenerFunc, this);
     if (status != noErr)
-      NSLog(@"Could not remove alive-listener for input device %u", _input._device);
+      DefaultLogger.Warn("Could not remove alive-listener for input device %u", _input._device);
   }
 
   ForwardingChainIdentifier *_identifier;
@@ -262,7 +263,7 @@ static void AttemptToStartMissingChains()
     }
     catch (const std::exception &e)
     {
-      NSLog(@"Could not initialize forwarding chain %@: %s", attempt, e.what());
+      DefaultLogger.Error("Could not initialize chain %s: %s", attempt.description.UTF8String, e.what());
     }
   }
   UpdateStatusItem();
@@ -291,7 +292,7 @@ static void AttemptToStartMissingChains()
     [_desiredActiveChains removeObject:identifier];
     [[NSUserDefaults standardUserDefaults] setObject:[_desiredActiveChains.allObjects valueForKey:@"asDictionary"] forKey:@"ActiveChains"];
     if (!didFind)
-      NSLog(@"Could not disable chain %@: Not found / active", identifier);
+      DefaultLogger.Warn("Could not disable chain %s: Not found / active", identifier.description.UTF8String);
   }
   else
   { // try to add the chain
@@ -299,7 +300,7 @@ static void AttemptToStartMissingChains()
     const auto loopbackDevices = GetLoopbackDevicesWithInput(allDevices);
     if (loopbackDevices.empty())
     {
-      NSLog(@"LoopbackAudio device is gone, cannot start chain");
+      DefaultLogger.Error("LoopbackAudio device is gone, cannot start chain");
       return;
     }
     const auto outputDevices = GetDevicesWithDigitalOutput(allDevices);
@@ -326,7 +327,7 @@ static void AttemptToStartMissingChains()
       }
       catch (const std::exception &e)
       {
-        NSLog(@"Could not initialize chain %@: %s", identifier, e.what());
+        DefaultLogger.Error("Could not initialize chain %s: %s", identifier.description.UTF8String, e.what());
       }
       break;
     }
@@ -438,16 +439,29 @@ static void AttemptToStartMissingChains()
     [_statusItem setMenu:self.menuForStatusItem];
   }
 
-  NSArray<NSDictionary *> *desiredActiveArray = [[NSUserDefaults standardUserDefaults] arrayForKey:@"ActiveChains"];
-  for (NSDictionary *dict in desiredActiveArray)
-  {
-    if (![dict isKindOfClass:NSDictionary.class])
-      continue;
-    ForwardingChainIdentifier *identifier = [ForwardingChainIdentifier identifierWithDictionary:dict];
-    if (!identifier)
-      continue;
-    [_desiredActiveChains addObject:identifier];
+  // register defaults
+  [[NSUserDefaults standardUserDefaults] registerDefaults:@{
+    @"LogLevel" : [NSNumber numberWithInt:MiniLogger::LogNote],
+    @"ActiveChains" : @[]
+  }];
+
+  { // read defaults
+    const NSInteger level = std::max(static_cast<NSInteger>(MiniLogger::LogNone),
+      std::min(static_cast<NSInteger>(MiniLogger::LogDebug),
+        [[NSUserDefaults standardUserDefaults] integerForKey:@"LogLevel"]));
+    DefaultLogger.SetLevel(static_cast<MiniLogger::Level>(level));
+    NSArray<NSDictionary *> *desiredActiveArray = [[NSUserDefaults standardUserDefaults] arrayForKey:@"ActiveChains"];
+    for (NSDictionary *dict in desiredActiveArray)
+    {
+      if (![dict isKindOfClass:NSDictionary.class])
+        continue;
+      ForwardingChainIdentifier *identifier = [ForwardingChainIdentifier identifierWithDictionary:dict];
+      if (!identifier)
+        continue;
+      [_desiredActiveChains addObject:identifier];
+    }
   }
+
   AttemptToStartMissingChains();
 
   [[[NSWorkspace sharedWorkspace] notificationCenter] addObserver:self selector:@selector(receiveSleepNote:)
