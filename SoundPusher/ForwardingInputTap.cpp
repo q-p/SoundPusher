@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cassert>
 #include <cstring>
 
@@ -15,18 +16,37 @@
 #include "DigitalOutputContext.hpp"
 
 
+/// @return the number of input frames returned by the device in a nominal cycle.
+static uint32_t GetDeviceInputFrameSize(AudioObjectID device)
+{
+  const AudioObjectPropertyAddress DeviceFrameSizeAddress = {kAudioDevicePropertyBufferFrameSize, kAudioObjectPropertyScopeInput, kAudioObjectPropertyElementMaster};
+  UInt32 deviceFrameSize = 0;
+  UInt32 dataSize = sizeof deviceFrameSize;
+  OSStatus status = AudioObjectGetPropertyData(device, &DeviceFrameSizeAddress, 0, NULL, &dataSize, &deviceFrameSize);
+  if (status != noErr)
+    throw CAHelper::CoreAudioException(status);
+  return deviceFrameSize;
+}
+
+/// @return the minimum number of input frames required to be available at output time.
+static uint32_t GetMinFrames(const uint32_t packetSize, const uint32_t framesPerInputCycle)
+{
+  const uint32_t minInputCyclesPerOutputCycle = packetSize / framesPerInputCycle; // truncating
+  return packetSize - minInputCyclesPerOutputCycle * framesPerInputCycle;
+}
+
 ForwardingInputTap::ForwardingInputTap(AudioObjectID device, AudioObjectID stream,
   DigitalOutputContext &outContext)
-: _device(device), _stream(stream)
-, _format(outContext.GetInputFormat()), _outContext(outContext)
-, _deviceIOProcID(nullptr), _isRunning(false)
+: _device(device), _stream(stream), _format(outContext.GetInputFormat())
+, _outContext(outContext), _deviceIOProcID(nullptr), _isRunning(false)
 {
   OSStatus status = AudioDeviceCreateIOProcID(_device, DeviceIOProcFunc, this, &_deviceIOProcID);
   if (status != noErr)
     throw CAHelper::CoreAudioException(status);
 
   _numBufferedFrames.store(0, std::memory_order_relaxed);
-  _outContext.SetInputBufferNumFramesPointer(&_numBufferedFrames);
+  _outContext.SetInputBufferNumFramesPointer(&_numBufferedFrames, 
+    GetMinFrames(outContext.GetNumFramesPerPacket(), GetDeviceInputFrameSize(_device)));
 
   _planarFrames.resize(outContext.GetNumFramesPerPacket() * _format.mChannelsPerFrame, 0.0f);
   _planarInputPointers.resize(_format.mChannelsPerFrame);

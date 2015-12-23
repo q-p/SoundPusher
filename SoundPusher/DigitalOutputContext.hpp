@@ -35,8 +35,14 @@ struct DigitalOutputContext
   uint32_t GetNumFramesPerPacket() const { return _encoder.GetNumFramesPerPacket(); }
   /// @return the input format expected by EncodeAndAppendPacket().
   const AudioStreamBasicDescription &GetInputFormat() const { return _encoder.GetInFormat(); }
-  /// Sets the pointer to the number of frames in the input buffer
-  void SetInputBufferNumFramesPointer(std::atomic<uint32_t> *inputBufferNumFrames) { _inputBufferNumFrames = inputBufferNumFrames; }
+
+  /// Sets the pointer to the number of frames in the input buffer (and how many we need to keep available).
+  void SetInputBufferNumFramesPointer(std::atomic<uint32_t> *inputBufferNumFramesPointer, const uint32_t minInputFramesAtOutputTime)
+  {
+    _inputBufferNumFramesPointer = inputBufferNumFramesPointer;
+    _minInputFramesAtOutputTime = minInputFramesAtOutputTime;
+  }
+
   /// Encodes the given planar input frames and appends them to the buffer for this output context.
   /**
    * Is called by a different thread, but as long as it's only one this is ok, as the buffer is thread-safe for single
@@ -75,19 +81,10 @@ protected:
   SPDIFAudioEncoder _encoder;
 
   /// Pointer to the number of frames in the input buffer.
-  std::atomic<uint32_t> *_inputBufferNumFrames;
+  std::atomic<uint32_t> *_inputBufferNumFramesPointer;
 
-  /// How many frames we want to have in the input buffer at the time of a (packed) output buffer interrupt.
-  uint32_t _desiredInputFramesAtOutput;
-
-  /// How often we've had to provide silence because there was no data in our output buffer.
-  uint32_t _numOutputBufferUnderruns;
-
-  /// How many buffers in a row we provided successfully (i.e. without falling back to silence).
-  uint32_t _numConsecutiveBuffers;
-
-  /// Precomputed, digitally encoded silence (for when we have no other encoded packets).
-  std::vector<uint8_t> _encodedSilence;
+  /// How many frames we need to have in the input buffer at the time of a (packed) output buffer interrupt.
+  uint32_t _minInputFramesAtOutputTime;
 
   /// IOProc handle.
   AudioDeviceIOProcID _deviceIOProcID;
