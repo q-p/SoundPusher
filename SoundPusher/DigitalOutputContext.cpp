@@ -42,7 +42,7 @@ DigitalOutputContext::DigitalOutputContext(AudioObjectID device, AudioObjectID s
 {
   OSStatus status = AudioDeviceCreateIOProcID(_device, DeviceIOProcFunc, this, &_deviceIOProcID);
   if (status != noErr)
-    throw CAHelper::CoreAudioException(status);
+    throw CAHelper::CoreAudioException("DigitalOutputContext::AudioDeviceCreateIOProcID()", status);
 
   TPCircularBufferInit(&_packetBuffer, 3 * _encoder.MaxBytesPerPacket);
 
@@ -94,7 +94,7 @@ void DigitalOutputContext::Start()
     return;
   OSStatus status = AudioDeviceStart(_device, _deviceIOProcID);
   if (status != noErr)
-    throw CAHelper::CoreAudioException(status);
+    throw CAHelper::CoreAudioException("DigitalOutputContext::Start(): AudioDeviceStart()", status);
 }
 
 void DigitalOutputContext::Stop()
@@ -103,7 +103,7 @@ void DigitalOutputContext::Stop()
     return;
   OSStatus status = AudioDeviceStop(_device, _deviceIOProcID);
   if (status != noErr)
-    throw CAHelper::CoreAudioException(status);
+    throw CAHelper::CoreAudioException("DigitalOutputContext::Stop(): AudioDeviceStop()", status);
 }
 
 

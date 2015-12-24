@@ -18,7 +18,7 @@ namespace CAHelper {
 
 std::string Get4CCAsString(const UInt32 val);
 
-struct CoreAudioException : std::runtime_error { CoreAudioException(const OSStatus error); };
+struct CoreAudioException : std::runtime_error { CoreAudioException(const std::string &what, const OSStatus error); };
 
 CFStringRef GetStringProperty(const AudioObjectID device, const AudioObjectPropertyAddress &address);
 

@@ -33,8 +33,8 @@ std::string Get4CCAsString(const UInt32 val)
   return std::to_string(val);
 }
 
-CoreAudioException::CoreAudioException(const OSStatus error)
-: std::runtime_error(Get4CCAsString(error))
+CoreAudioException::CoreAudioException(const std::string &what, const OSStatus error)
+: std::runtime_error(what + std::string(": ") + Get4CCAsString(error))
 { }
 
 const AudioObjectPropertyAddress DeviceUIDAddress = {kAudioDevicePropertyDeviceUID, 0, 0};
@@ -46,7 +46,7 @@ CFStringRef GetStringProperty(const AudioObjectID device, const AudioObjectPrope
   UInt32 dataSize = sizeof string;
   OSStatus status = AudioObjectGetPropertyData(device, &address, 0, NULL, &dataSize, &string);
   if (status != noErr)
-    throw CAHelper::CoreAudioException(status);
+    throw CAHelper::CoreAudioException("GetStringProperty(): AudioObjectGetPropertyData()", status);
   return string;
 }
 
@@ -64,15 +64,18 @@ std::vector<AudioStreamBasicDescription> GetStreamPhysicalFormats(const AudioObj
   // num physical formats
   status = AudioObjectGetPropertyDataSize(stream, &physicalFormatsAddress, 0, NULL, &dataSize);
   if (status != noErr)
-    throw CoreAudioException(status);
+    throw CoreAudioException("GetStreamPhysicalFormats(): AudioObjectGetPropertyDataSize()", status);
 
   // get physical formats
   std::vector<AudioStreamRangedDescription> rangedFormats;
   rangedFormats.resize(dataSize / sizeof rangedFormats.front());
-  status = AudioObjectGetPropertyData(stream, &physicalFormatsAddress, 0, NULL, &dataSize, rangedFormats.data());
-  if (status != noErr)
-    throw CoreAudioException(status);
-  rangedFormats.resize(dataSize / sizeof rangedFormats.front());
+  if (!rangedFormats.empty())
+  {
+    status = AudioObjectGetPropertyData(stream, &physicalFormatsAddress, 0, NULL, &dataSize, rangedFormats.data());
+    if (status != noErr)
+      throw CoreAudioException("GetStreamPhysicalFormats(): AudioObjectGetPropertyData()", status);
+    rangedFormats.resize(dataSize / sizeof rangedFormats.front());
+  }
 
   // throw away ranges
   std::vector<AudioStreamBasicDescription> formats;
@@ -91,15 +94,18 @@ std::vector<AudioObjectID> GetStreams(const AudioObjectID device, const bool inp
   const AudioObjectPropertyAddress streamsAddress = {kAudioDevicePropertyStreams, input ? kAudioObjectPropertyScopeInput : kAudioObjectPropertyScopeOutput, kAudioObjectPropertyElementMaster};
   // num streams
   status = AudioObjectGetPropertyDataSize(device, &streamsAddress, 0, NULL, &dataSize);
-  if (dataSize == 0 || status != noErr)
-    throw CoreAudioException(status);
+  if (status != noErr)
+    throw CoreAudioException("GetStreams(): AudioObjectGetPropertyDataSize()", status);
   // get streams
   std::vector<AudioObjectID> streams;
   streams.resize(dataSize / sizeof streams.front());
-  status = AudioObjectGetPropertyData(device, &streamsAddress, 0, NULL, &dataSize, streams.data());
-  if (status != noErr)
-    throw CoreAudioException(status);
-  streams.resize(dataSize / sizeof streams.front()); // may not have returned full buffer
+  if (!streams.empty())
+  {
+    status = AudioObjectGetPropertyData(device, &streamsAddress, 0, NULL, &dataSize, streams.data());
+    if (status != noErr)
+      throw CoreAudioException("GetStreams(): AudioObjectGetPropertyData()", status);
+    streams.resize(dataSize / sizeof streams.front()); // may not have returned full buffer
+  }
   return streams;
 }
 
@@ -112,15 +118,18 @@ std::vector<AudioObjectID> GetDevices()
 
   // num devices
   status = AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, &audioDevicesAddress, 0, NULL, &dataSize);
-  if (dataSize == 0 || status != noErr)
-    throw CoreAudioException(status);
+  if (status != noErr)
+    throw CoreAudioException("GetDevices(): AudioObjectGetPropertyDataSize()", status);
   // get devices
   std::vector<AudioObjectID> devices;
   devices.resize(dataSize / sizeof devices.front());
-  status = AudioObjectGetPropertyData(kAudioObjectSystemObject, &audioDevicesAddress, 0, NULL, &dataSize, devices.data());
-  if (status != noErr)
-    throw CoreAudioException(status);
-  devices.resize(dataSize / sizeof devices.front()); // may not have returned full buffer
+  if (!devices.empty())
+  {
+    status = AudioObjectGetPropertyData(kAudioObjectSystemObject, &audioDevicesAddress, 0, NULL, &dataSize, devices.data());
+    if (status != noErr)
+      throw CoreAudioException("GetDevices(): AudioObjectGetPropertyData()", status);
+    devices.resize(dataSize / sizeof devices.front()); // may not have returned full buffer
+  }
   return devices;
 }
 
@@ -138,7 +147,7 @@ DefaultDeviceChanger::DefaultDeviceChanger(const AudioObjectID claimedDevice, co
   UInt32 dataSize = sizeof defaultDevice;
   OSStatus status = AudioObjectGetPropertyData(kAudioObjectSystemObject, &DefaultDeviceAddress, 0, NULL, &dataSize, &defaultDevice);
   if (status != noErr)
-    throw CoreAudioException(status);
+    throw CoreAudioException("DefaultDeviceChanger::DefaultDeviceChanger(): AudioObjectGetPropertyData()", status);
   if (defaultDevice == claimedDevice)
   { // the default device is the one we're about to claim, so let's try to change it to the provided alternative
     dataSize = sizeof alternativeDevice;

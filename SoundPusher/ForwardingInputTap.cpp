@@ -24,7 +24,7 @@ static uint32_t GetDeviceInputFrameSize(AudioObjectID device)
   UInt32 dataSize = sizeof deviceFrameSize;
   OSStatus status = AudioObjectGetPropertyData(device, &DeviceFrameSizeAddress, 0, NULL, &dataSize, &deviceFrameSize);
   if (status != noErr)
-    throw CAHelper::CoreAudioException(status);
+    throw CAHelper::CoreAudioException("GetDeviceInputFrameSize(): AudioObjectGetPropertyData()", status);
   return deviceFrameSize;
 }
 
@@ -42,7 +42,7 @@ ForwardingInputTap::ForwardingInputTap(AudioObjectID device, AudioObjectID strea
 {
   OSStatus status = AudioDeviceCreateIOProcID(_device, DeviceIOProcFunc, this, &_deviceIOProcID);
   if (status != noErr)
-    throw CAHelper::CoreAudioException(status);
+    throw CAHelper::CoreAudioException("ForwardingInputTap::AudioDeviceCreateIOProcID()", status);
 
   _numBufferedFrames.store(0, std::memory_order_relaxed);
   _outContext.SetInputBufferNumFramesPointer(&_numBufferedFrames, 
@@ -68,7 +68,7 @@ void ForwardingInputTap::Start()
     return;
   OSStatus status = AudioDeviceStart(_device, _deviceIOProcID);;
   if (status != noErr)
-    throw CAHelper::CoreAudioException(status);
+    throw CAHelper::CoreAudioException("ForwardingInputTap::Start(): AudioDeviceStart()", status);
 }
 
 void ForwardingInputTap::Stop()
@@ -77,7 +77,7 @@ void ForwardingInputTap::Stop()
     return;
   OSStatus status = AudioDeviceStop(_device, _deviceIOProcID);
   if (status != noErr)
-    throw CAHelper::CoreAudioException(status);
+    throw CAHelper::CoreAudioException("ForwardingInputTap::Stop(): AudioDeviceStop()", status);
 }
 
 
