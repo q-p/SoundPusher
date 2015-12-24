@@ -6,7 +6,25 @@
 	objectVersion = 46;
 	objects = {
 
+/* Begin PBXAggregateTarget section */
+		8A4638971C2C1AE200F94631 /* Installer */ = {
+			isa = PBXAggregateTarget;
+			buildConfigurationList = 8A4638981C2C1AE200F94631 /* Build configuration list for PBXAggregateTarget "Installer" */;
+			buildPhases = (
+				8A46389F1C2C1B2700F94631 /* ShellScript */,
+			);
+			dependencies = (
+				8A46389C1C2C1AF700F94631 /* PBXTargetDependency */,
+				8A46389E1C2C1AF700F94631 /* PBXTargetDependency */,
+			);
+			name = Installer;
+			productName = Installer;
+		};
+/* End PBXAggregateTarget section */
+
 /* Begin PBXBuildFile section */
+		8A3E49B21C2C92C5005D7E4F /* Distribution.xml in Resources */ = {isa = PBXBuildFile; fileRef = 8A3E49B01C2C92C5005D7E4F /* Distribution.xml */; };
+		8A3E49B31C2C92C5005D7E4F /* Scripts-Driver in Resources */ = {isa = PBXBuildFile; fileRef = 8A3E49B11C2C92C5005D7E4F /* Scripts-Driver */; };
 		8A65D68F1C2614D90071EBBE /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 8A65D68D1C2614D90071EBBE /* InfoPlist.strings */; };
 		8A65D6AC1C26C1790071EBBE /* libavcodec.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = 8A65D6A91C26C1790071EBBE /* libavcodec.dylib */; };
 		8A65D6AD1C26C1790071EBBE /* libavformat.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = 8A65D6AA1C26C1790071EBBE /* libavformat.dylib */; };
@@ -31,6 +49,23 @@
 		8ADF7AA41C1F2D1500C4F936 /* CoreAudioHelper.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 8ADF7AA21C1F2D1500C4F936 /* CoreAudioHelper.cpp */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		8A46389B1C2C1AF700F94631 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 8A7C0D041C1DB801006EC2C6 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 8A7C0D0D1C1DCDCF006EC2C6;
+			remoteInfo = LoopbackAudio;
+		};
+		8A46389D1C2C1AF700F94631 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 8A7C0D041C1DB801006EC2C6 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 8ADF7A861C1EFE9400C4F936;
+			remoteInfo = SoundPusher;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXCopyFilesBuildPhase section */
 		8A65D6B71C26CE3B0071EBBE /* Copy FFmpeg libs */ = {
 			isa = PBXCopyFilesBuildPhase;
@@ -48,6 +83,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		8A3E49B01C2C92C5005D7E4F /* Distribution.xml */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xml; name = Distribution.xml; path = Package/Distribution.xml; sourceTree = "<group>"; };
+		8A3E49B11C2C92C5005D7E4F /* Scripts-Driver */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "Scripts-Driver"; path = "Package/Scripts-Driver"; sourceTree = "<group>"; };
 		8A65D68E1C2614D90071EBBE /* Base */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = Base; path = Base.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		8A65D6A91C26C1790071EBBE /* libavcodec.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libavcodec.dylib; path = lib/libavcodec.dylib; sourceTree = FFMPEG_HOME; };
 		8A65D6AA1C26C1790071EBBE /* libavformat.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libavformat.dylib; path = lib/libavformat.dylib; sourceTree = FFMPEG_HOME; };
@@ -105,6 +142,15 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		8A3E49B41C2C92D1005D7E4F /* Package */ = {
+			isa = PBXGroup;
+			children = (
+				8A3E49B01C2C92C5005D7E4F /* Distribution.xml */,
+				8A3E49B11C2C92C5005D7E4F /* Scripts-Driver */,
+			);
+			name = Package;
+			sourceTree = "<group>";
+		};
 		8A65D6B21C26C2630071EBBE /* FFmpeg */ = {
 			isa = PBXGroup;
 			children = (
@@ -121,6 +167,7 @@
 				8ADF7B4E1C2016F700C4F936 /* README.md */,
 				8A7C0D101C1DCDCF006EC2C6 /* LoopbackAudio */,
 				8ADF7A881C1EFE9400C4F936 /* SoundPusher */,
+				8A3E49B41C2C92D1005D7E4F /* Package */,
 				8A8D38EF1C1DE3B100B9A127 /* thirdparty */,
 				8A7C0D0F1C1DCDCF006EC2C6 /* Products */,
 			);
@@ -247,6 +294,9 @@
 				LastUpgradeCheck = 0720;
 				ORGANIZATIONNAME = "[maven] heavy industries";
 				TargetAttributes = {
+					8A4638971C2C1AE200F94631 = {
+						CreatedOnToolsVersion = 7.2;
+					};
 					8A7C0D0D1C1DCDCF006EC2C6 = {
 						CreatedOnToolsVersion = 7.2;
 					};
@@ -275,6 +325,7 @@
 			targets = (
 				8A7C0D0D1C1DCDCF006EC2C6 /* LoopbackAudio */,
 				8ADF7A861C1EFE9400C4F936 /* SoundPusher */,
+				8A4638971C2C1AE200F94631 /* Installer */,
 			);
 		};
 /* End PBXProject section */
@@ -285,6 +336,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				8A7C0D181C1DD691006EC2C6 /* Localizable.strings in Resources */,
+				8A3E49B21C2C92C5005D7E4F /* Distribution.xml in Resources */,
+				8A3E49B31C2C92C5005D7E4F /* Scripts-Driver in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -299,6 +352,25 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		8A46389F1C2C1B2700F94631 /* ShellScript */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 8;
+			files = (
+			);
+			inputPaths = (
+				"",
+			);
+			outputPaths = (
+				"$(BUILT_PRODUCTS_DIR)/SoundPusher.pkg",
+			);
+			runOnlyForDeploymentPostprocessing = 1;
+			shellPath = /bin/sh;
+			shellScript = "DRIVER_PATH=\"/Library/Audio/Plug-Ins/HAL\"\nDRIVER_NAME=\"LoopbackAudio.driver\"\npkgbuild --component \"${INSTALL_ROOT}${DRIVER_PATH}/${DRIVER_NAME}\" --scripts \"./Package/Scripts-Driver\" --install-location \"${DRIVER_PATH}\" \"${TEMP_DIR}/de.maven.LoopbackAudio.pkg\"\nAPP_PATH=\"/Applications\"\nAPP_NAME=\"SoundPusher.app\"\nAPP_VERSION=`/usr/libexec/PlistBuddy -c \"Print :CFBundleVersion\" ${INSTALL_ROOT}${APP_PATH}/${APP_NAME}/Contents/Info.plist`\npkgbuild --component \"${INSTALL_ROOT}${APP_PATH}/${APP_NAME}\" --install-location \"${APP_PATH}\" \"${TEMP_DIR}/de.maven.SoundPusher.pkg\"\n\nproductbuild --distribution \"./Package/Distribution.xml\" --package-path \"${TEMP_DIR}\" --resources \"./Package/Resources\" --version \"${APP_VERSION}\" --sign \"Developer ID Installer\" \"${BUILT_PRODUCTS_DIR}/SoundPusher.pkg\"";
+			showEnvVarsInLog = 0;
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		8A7C0D0A1C1DCDCF006EC2C6 /* Sources */ = {
@@ -328,6 +400,19 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		8A46389C1C2C1AF700F94631 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 8A7C0D0D1C1DCDCF006EC2C6 /* LoopbackAudio */;
+			targetProxy = 8A46389B1C2C1AF700F94631 /* PBXContainerItemProxy */;
+		};
+		8A46389E1C2C1AF700F94631 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 8ADF7A861C1EFE9400C4F936 /* SoundPusher */;
+			targetProxy = 8A46389D1C2C1AF700F94631 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin PBXVariantGroup section */
 		8A65D68D1C2614D90071EBBE /* InfoPlist.strings */ = {
 			isa = PBXVariantGroup;
@@ -348,6 +433,20 @@
 /* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
+		8A4638991C2C1AE200F94631 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				PRODUCT_NAME = Installer;
+			};
+			name = Debug;
+		};
+		8A46389A1C2C1AE200F94631 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				PRODUCT_NAME = Installer;
+			};
+			name = Release;
+		};
 		8A7C0D081C1DB801006EC2C6 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -377,7 +476,7 @@
 				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
-				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_IDENTITY = "Developer ID Application";
 				COMBINE_HIDPI_IMAGES = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
@@ -405,7 +504,6 @@
 				PRODUCT_BUNDLE_IDENTIFIER = de.maven.LoopbackAudio;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
-				SKIP_INSTALL = YES;
 				WRAPPER_EXTENSION = driver;
 			};
 			name = Debug;
@@ -427,7 +525,7 @@
 				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
-				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_IDENTITY = "Developer ID Application";
 				COMBINE_HIDPI_IMAGES = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
@@ -449,7 +547,6 @@
 				PRODUCT_BUNDLE_IDENTIFIER = de.maven.LoopbackAudio;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
-				SKIP_INSTALL = YES;
 				WRAPPER_EXTENSION = driver;
 			};
 			name = Release;
@@ -472,7 +569,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_ENTITLEMENTS = SoundPusher/SoundPusher.entitlements;
-				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_IDENTITY = "Developer ID Application";
 				COMBINE_HIDPI_IMAGES = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
@@ -522,7 +619,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_ENTITLEMENTS = SoundPusher/SoundPusher.entitlements;
-				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_IDENTITY = "Developer ID Application";
 				COMBINE_HIDPI_IMAGES = YES;
 				COPY_PHASE_STRIP = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
@@ -551,6 +648,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		8A4638981C2C1AE200F94631 /* Build configuration list for PBXAggregateTarget "Installer" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8A4638991C2C1AE200F94631 /* Debug */,
+				8A46389A1C2C1AE200F94631 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		8A7C0D071C1DB801006EC2C6 /* Build configuration list for PBXProject "SoundPusher" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

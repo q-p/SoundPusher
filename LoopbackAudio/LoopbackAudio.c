@@ -1,8 +1,7 @@
 /*
      File: LoopbackAudio.c
  Abstract: Provides an input- and output-device, the output is transferred to the input.
-  Version: 1.0.0
-  
+
  Originally from NullAudio.c
 
 */
