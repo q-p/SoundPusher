@@ -16,36 +16,17 @@
 #include "DigitalOutputContext.hpp"
 
 
-/// @return the number of input frames returned by the device in a nominal cycle.
-static uint32_t GetDeviceInputFrameSize(AudioObjectID device)
-{
-  const AudioObjectPropertyAddress DeviceFrameSizeAddress = {kAudioDevicePropertyBufferFrameSize, kAudioObjectPropertyScopeInput, kAudioObjectPropertyElementMaster};
-  UInt32 deviceFrameSize = 0;
-  UInt32 dataSize = sizeof deviceFrameSize;
-  OSStatus status = AudioObjectGetPropertyData(device, &DeviceFrameSizeAddress, 0, NULL, &dataSize, &deviceFrameSize);
-  if (status != noErr)
-    throw CAHelper::CoreAudioException("GetDeviceInputFrameSize(): AudioObjectGetPropertyData()", status);
-  return deviceFrameSize;
-}
-
-/// @return the minimum number of input frames required to be available at output time.
-static uint32_t GetMinFrames(const uint32_t packetSize, const uint32_t framesPerInputCycle)
-{
-  const uint32_t minInputCyclesPerOutputCycle = packetSize / framesPerInputCycle; // truncating
-  return packetSize - minInputCyclesPerOutputCycle * framesPerInputCycle;
-}
-
-ForwardingInputTap::ForwardingInputTap(AudioObjectID device, AudioObjectID stream, DigitalOutputContext &outContext)
+ForwardingInputTap::ForwardingInputTap(AudioObjectID device, AudioObjectID stream,
+  DigitalOutputContext &outContext)
 : _device(device), _stream(stream), _format(outContext.GetInputFormat()), _outContext(outContext)
-, _deviceIOProcID(nullptr), _isRunning(false)
+, _log(DefaultLogger.GetLevel(), "SoundPusher.InIOProc"), _deviceIOProcID(nullptr), _isRunning(false)
 {
   OSStatus status = AudioDeviceCreateIOProcID(_device, DeviceIOProcFunc, this, &_deviceIOProcID);
   if (status != noErr)
     throw CAHelper::CoreAudioException("ForwardingInputTap::AudioDeviceCreateIOProcID()", status);
 
   _numBufferedFrames.store(0, std::memory_order_relaxed);
-  _outContext.SetInputBufferNumFramesPointer(&_numBufferedFrames, 
-    GetMinFrames(outContext.GetNumFramesPerPacket(), GetDeviceInputFrameSize(_device)));
+  _outContext.SetInputBufferNumFramesPointer(&_numBufferedFrames);
 
   _planarFrames.resize(outContext.GetNumFramesPerPacket() * _format.mChannelsPerFrame, 0.0f);
   _planarInputPointers.resize(_format.mChannelsPerFrame);
@@ -118,12 +99,22 @@ OSStatus ForwardingInputTap::DeviceIOProcFunc(AudioObjectID inDevice, const Audi
   assert(inInputData->mBuffers[0].mNumberChannels == me->_format.mChannelsPerFrame);
   assert(me->_format.mChannelsPerFrame < Deinterleavers.size());
 
+  auto numBufferedFrames = me->_numBufferedFrames.load(std::memory_order_relaxed);
   const float *input = static_cast<const float *>(inInputData->mBuffers[0].mData);
   uint32_t available = inInputData->mBuffers[0].mDataByteSize / (me->_format.mChannelsPerFrame * sizeof (float));
-  auto numBufferedFrames = me->_numBufferedFrames.load(std::memory_order_relaxed);
   while (available > 0)
   {
     assert(numBufferedFrames < numFramesPerPacket);
+    const auto numRequestedDrops = me->_outContext.GetNumRequestedInputFrameDrops();
+    assert(numRequestedDrops >= 0);
+    if (numRequestedDrops > 0 && numBufferedFrames > 0)
+    {
+      const auto numDrops = std::min(static_cast<int32_t>(numBufferedFrames), numRequestedDrops);
+      numBufferedFrames -= numDrops;
+      me->_outContext.AddNumRequestedInputFrameDrops(-numDrops);
+      me->_log.Info("Reducing buffered input frames by %i (requested: %i)", numDrops, numRequestedDrops);
+    }
+
     { // copy as many samples as we have space for (which might or might not be a full packet)
       const uint32_t bufferSpace = numFramesPerPacket - numBufferedFrames;
       const uint32_t num = std::min(available, bufferSpace);

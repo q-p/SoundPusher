@@ -35,7 +35,7 @@ DigitalOutputContext::DigitalOutputContext(AudioObjectID device, AudioObjectID s
   const AudioStreamBasicDescription &format, const AudioChannelLayoutTag channelLayoutTag)
 : _device(device), _stream(stream), _format(format), _channelLayoutTag(channelLayoutTag)
 , _encoder(GetBestInputFormatForOutputFormat(_format, _channelLayoutTag), _channelLayoutTag, _format)
-, _inputBufferNumFramesPointer(nullptr), _minInputFramesAtOutputTime(0)
+, _inputBufferNumFramesPointer(nullptr),  _extraInputFrameDropRequest(0), _minBufferedFramesAtOutputTime(0)
 , _log(DefaultLogger.GetLevel(), "SoundPusher.OutIOProc"), _deviceIOProcID(nullptr), _isRunning(false)
 , _hogger(_device, true), _originalFormat(_stream, format)
 {
@@ -69,8 +69,8 @@ DigitalOutputContext::~DigitalOutputContext()
 {
   if (_isRunning)
     Stop();
-  TPCircularBufferCleanup(&_packetBuffer);
   AudioDeviceDestroyIOProcID(_device, _deviceIOProcID);
+  TPCircularBufferCleanup(&_packetBuffer);
 }
 
 
@@ -91,6 +91,9 @@ void DigitalOutputContext::Start()
 {
   if (_isRunning)
     return;
+  _cycleCounter = 0;
+  _minBufferedFramesAtOutputTime = UINT32_MAX;
+  _extraInputFrameDropRequest.store(0, std::memory_order_relaxed);
   OSStatus status = AudioDeviceStart(_device, _deviceIOProcID);
   if (status != noErr)
     throw CAHelper::CoreAudioException("DigitalOutputContext::Start(): AudioDeviceStart()", status);
@@ -100,6 +103,8 @@ void DigitalOutputContext::Stop()
 {
   if (!_isRunning)
     return;
+  // reset on stop, because an forwarding tap may re-start before we do (and thus have a chance to reset it).
+  _extraInputFrameDropRequest.store(0, std::memory_order_relaxed);
   OSStatus status = AudioDeviceStop(_device, _deviceIOProcID);
   if (status != noErr)
     throw CAHelper::CoreAudioException("DigitalOutputContext::Stop(): AudioDeviceStop()", status);
@@ -113,30 +118,51 @@ OSStatus DigitalOutputContext::DeviceIOProcFunc(AudioObjectID inDevice, const Au
   DigitalOutputContext *me = static_cast<DigitalOutputContext *>(inClientData);
   assert(outOutputData->mNumberBuffers == 1);
 
+  const auto availableInputFrames = me->_inputBufferNumFramesPointer->load(std::memory_order_relaxed);
+
   int32_t availableBytes = 0;
   auto buffer = static_cast<const uint8_t *>(TPCircularBufferTail(&me->_packetBuffer, &availableBytes));
   const auto packetSize = me->_format.mBytesPerPacket;
+  const auto numFramesPerPacket = me->GetNumFramesPerPacket();
+
+  { // update minimum available frames
+    const auto availableFrames = availableInputFrames + (availableBytes / packetSize) * numFramesPerPacket;
+    if (availableFrames < me->_minBufferedFramesAtOutputTime)
+      me->_minBufferedFramesAtOutputTime = availableFrames;
+  }
+
+  uint32_t numExtraBytesToConsume = 0;
+  if (me->_cycleCounter++ % 64 == 0)
+  {
+    const auto numInitialMinBufferedFrames = me->_minBufferedFramesAtOutputTime;
+    auto numExtraFrames = 0;
+    if (numInitialMinBufferedFrames > numFramesPerPacket)
+    {
+      numExtraFrames = me->_minBufferedFramesAtOutputTime - numFramesPerPacket;
+      { // drop buffered output packets
+        const auto numExtraPackets = numExtraFrames / numFramesPerPacket;
+        numExtraBytesToConsume = numExtraPackets * packetSize;
+        buffer += numExtraBytesToConsume;
+        availableBytes -= numExtraBytesToConsume;
+        numExtraFrames -= numExtraPackets * numFramesPerPacket;
+        me->_minBufferedFramesAtOutputTime -= numExtraPackets * numFramesPerPacket;
+      }
+
+      if (numExtraFrames > 0)
+        me->AddNumRequestedInputFrameDrops(numExtraFrames);
+    }
+
+    if (numInitialMinBufferedFrames != me->_minBufferedFramesAtOutputTime)
+      me->_log.Info("Observed %u min buffered frames, reduced to %u", numInitialMinBufferedFrames, me->_minBufferedFramesAtOutputTime);
+
+    me->_minBufferedFramesAtOutputTime = UINT32_MAX;
+  }
+
   if (availableBytes >= packetSize)
   {
-    uint32_t numExtraBytesToConsume = 0;
-    const uint32_t numExtraPackets = (availableBytes / packetSize) - 1u;
-
-    // optimize output latency by consuming excess compressed packets
-    if (numExtraPackets > 0)
-      numExtraBytesToConsume = numExtraPackets * packetSize;
-
-    memcpy(outOutputData->mBuffers[0].mData, buffer + numExtraBytesToConsume, outOutputData->mBuffers[0].mDataByteSize);
+    memcpy(outOutputData->mBuffers[0].mData, buffer, outOutputData->mBuffers[0].mDataByteSize);
     // note: we always consume whole packet(s), even if the request is for less
     TPCircularBufferConsume(&me->_packetBuffer, packetSize + numExtraBytesToConsume);
-
-    // attempt reduce extra input latency (i.e. drop some input buffer contents right now)
-    const auto availableInputFrames = me->_inputBufferNumFramesPointer->load(std::memory_order_relaxed);
-    if (availableInputFrames > me->_minInputFramesAtOutputTime)
-    {
-      me->_log.Info("%u input frames at output time, reducing to %u frames", availableInputFrames, me->_minInputFramesAtOutputTime);
-      me->_inputBufferNumFramesPointer->store(me->_minInputFramesAtOutputTime, std::memory_order_relaxed);
-      // we drop the newer frames instead of the stale ones so we don't have to copy around
-    }
   }
   else
   { // not enough data, repeat the previous packet
@@ -144,8 +170,8 @@ OSStatus DigitalOutputContext::DeviceIOProcFunc(AudioObjectID inDevice, const Au
     buffer = bufferBase + me->_packetBuffer.tail - packetSize;
     if (buffer < bufferBase)
       buffer += me->_packetBuffer.length; // wrap around to 2nd virtual copy at the back
-    me->_log.Info("%u/%u available, min input frames is %u", availableBytes, outOutputData->mBuffers[0].mDataByteSize, me->_minInputFramesAtOutputTime);
     memcpy(outOutputData->mBuffers[0].mData, buffer, outOutputData->mBuffers[0].mDataByteSize);
+    me->_log.Notice("%u/%u available, min buffered frames is %u", availableBytes, outOutputData->mBuffers[0].mDataByteSize, me->_minBufferedFramesAtOutputTime);
   }
   return noErr;
 }

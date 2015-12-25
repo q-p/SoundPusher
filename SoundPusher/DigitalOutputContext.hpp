@@ -37,12 +37,9 @@ struct DigitalOutputContext
   /// @return the input format expected by EncodeAndAppendPacket().
   const AudioStreamBasicDescription &GetInputFormat() const { return _encoder.GetInFormat(); }
 
-  /// Sets the pointer to the number of frames in the input buffer (and how many we need to keep available).
-  void SetInputBufferNumFramesPointer(std::atomic<uint32_t> *inputBufferNumFramesPointer, const uint32_t minInputFramesAtOutputTime)
-  {
-    _inputBufferNumFramesPointer = inputBufferNumFramesPointer;
-    _minInputFramesAtOutputTime = minInputFramesAtOutputTime;
-  }
+  /// Sets the pointer to the number of frames in the input buffer.
+  void SetInputBufferNumFramesPointer(const std::atomic<uint32_t> *inputBufferNumFramesPointer)
+  { _inputBufferNumFramesPointer = inputBufferNumFramesPointer; }
 
   /// Encodes the given planar input frames and appends them to the buffer for this output context.
   /**
@@ -51,6 +48,10 @@ struct DigitalOutputContext
    * of the ForwardingInputTap).
    */
   void EncodeAndAppendPacket(const uint32_t numFrames, const uint32_t numChannels, const float **inputFrames);
+  /// @return the number of requested input frames to be dropped, called by both threads.
+  int32_t GetNumRequestedInputFrameDrops() const { return _extraInputFrameDropRequest.load(std::memory_order_relaxed); }
+  /// Adds the given number of frames to the number of requested input frames to be dropped, called by both threads.
+  void AddNumRequestedInputFrameDrops(const int32_t num) { _extraInputFrameDropRequest.fetch_add(num, std::memory_order_relaxed); }
 
   /// Starts IO for the device.
   void Start();
@@ -82,10 +83,24 @@ protected:
   SPDIFAudioEncoder _encoder;
 
   /// Pointer to the number of frames in the input buffer.
-  std::atomic<uint32_t> *_inputBufferNumFramesPointer;
+  const std::atomic<uint32_t> *_inputBufferNumFramesPointer;
 
-  /// How many frames we need to have in the input buffer at the time of a (packed) output buffer interrupt.
-  uint32_t _minInputFramesAtOutputTime;
+  /// Counter for how many input frames we would like to have dropped.
+  /**
+   * This is only incremented by this thread, and only decremented by the input thread (which tries to fulfill the
+   * requests)
+   */
+  std::atomic<int32_t> _extraInputFrameDropRequest;
+
+  /// Counter for the approximate number of output cycles, used to monitor minimum available frames over a number of cycles.
+  uint32_t _cycleCounter;
+
+  /// The minimum number of buffered frames available at output time.
+  /**
+   * We want this to be >= GetNumFramesPerPacket(), but the larger we keep it (i.e. the more we buffer), the more
+   * latency we incur.
+   */
+  uint32_t _minBufferedFramesAtOutputTime;
 
   /// The logger for the IOProc (which is called from a different (real-time) thread).
   MiniLogger _log;

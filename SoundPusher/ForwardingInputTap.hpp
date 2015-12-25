@@ -14,6 +14,7 @@
 #include "CoreAudio/CoreAudio.h"
 
 #include "CoreAudioHelper.hpp"
+#include "MiniLogger.hpp"
 
 // forward declaration
 struct DigitalOutputContext;
@@ -29,7 +30,6 @@ struct ForwardingInputTap
   ForwardingInputTap(AudioObjectID device, AudioObjectID stream, DigitalOutputContext &outContext);
 
   ~ForwardingInputTap();
-
 
 
   /// Starts IO for the device.
@@ -62,6 +62,8 @@ protected:
   /// Backing storage for all planes.
   std::vector<float> _planarFrames;
 
+  /// The logger for the IOProc (which is called from a different (real-time) thread).
+  MiniLogger _log;
   /// IOProc handle.
   AudioDeviceIOProcID _deviceIOProcID;
 
