@@ -8,7 +8,6 @@
 
 #include <cstdarg>
 #include <cstdio>
-#include <chrono>
 
 #include "MiniLogger.hpp"
 

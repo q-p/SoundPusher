@@ -3,11 +3,19 @@ Provides a virtual 5.1-channel audio output device whose contents are real-time 
 
 **WARNING:** Please turn down the speaker / headphone volume before running this application, as any component misinterpreting a compressed audio stream as "normal" audio signals may result in unexpectedly loud noise.
 
+## Requirements
+The application has been developed on OS X 10.11 "El Capitan", but *should* work on OS X 10.10 "Yosemite" as well. It requires a compatible audio device capable of outputting compressed `AC3` audio formats (format IDs `ac-3`, `cac3`, `IAC3`, `iac3`). All testing was done with `cac3` (aka `kAudioFormat60958AC3`).
+
 ## Usage
 There are two component required to make this work:
 
 1. `LoopbackAudio` — A user-space CoreAudio driver (aka `AudioServerPlugin`) that provides a 5.1 output stream whose contents are mirrored ("looped back") to its own input stream. This allows applications to process the audio output of the system (if it is sent to the `LoopbackAudio` device). `LoopbackAudio.driver` must be installed (copied) into the `/Library/Audio/Plug-Ins/HAL` directory.
 2. `SoundPusher` — An application that continuously reads audio from the `LoopbackAudio` device, encodes in into a compressed format, and then sends that compressed stream to a (hopefully) real sound device's digital output stream. This is controlled through its menu bar extra.
+
+Once the driver is installed and `SoundPusher` running, you should be able to select supported digital output devices which will forward any sound output sent to the `Loopback Audio` device to the designated digital output. `SoundPusher` will set the default output device to `Loopback Audio` if it was previously set to the device used for digital output.
+
+## Contact & Support
+Please report any issues on [GitHub](https://github.com/q-p/SoundPusher).
 
 ## Dependencies
 ### FFmpeg — libavcodec, libavformat
