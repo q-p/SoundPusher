@@ -1,6 +1,6 @@
 //
 //  CoreAudioHelper.hpp
-//  VirtualSound
+//  SoundPusher
 //
 //  Created by Daniel Vollmer on 14/12/2015.
 //

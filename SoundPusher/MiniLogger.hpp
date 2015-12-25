@@ -9,31 +9,41 @@
 #ifndef MiniLogger_hpp
 #define MiniLogger_hpp
 
+#include <asl.h>
+
 struct MiniLogger
 {
   enum Level
   {
-    LogNone = 0,
-    LogError,
-    LogWarn,
-    LogNote,
-    LogInfo,
-    LogDebug
+    LogEmergency = ASL_LEVEL_EMERG,
+    LogAlert     = ASL_LEVEL_ALERT,
+    LogCrit      = ASL_LEVEL_CRIT,
+    LogErr       = ASL_LEVEL_ERR,
+    LogWarning   = ASL_LEVEL_WARNING,
+    LogNotice    = ASL_LEVEL_NOTICE,
+    LogInfo      = ASL_LEVEL_INFO,
+    LogDebug     = ASL_LEVEL_DEBUG
   };
 
-  MiniLogger(const Level level = LogNote);
+  MiniLogger(const Level level = LogNotice, const char *subsystem = nullptr);
+  ~MiniLogger();
 
   void SetLevel(const Level level) { _level = level; }
   Level GetLevel() const { return _level; }
 
-  void Error(const char *format, ...) const;
-  void Warn(const char *format, ...) const;
-  void Note(const char *format, ...) const;
+  void Emergency(const char *format, ...) const;
+  void Alert(const char *format, ...) const;
+  void Crit(const char *format, ...) const;
+  void Err(const char *format, ...) const;
+  void Warning(const char *format, ...) const;
+  void Notice(const char *format, ...) const;
   void Info(const char *format, ...) const;
   void Debug(const char *format, ...) const;
 
 protected:
   Level _level;
+  asl_object_t _clientHandle;
+  asl_object_t _messageDict;
 };
 
 extern MiniLogger DefaultLogger;

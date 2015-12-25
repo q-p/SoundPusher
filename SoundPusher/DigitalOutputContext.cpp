@@ -1,6 +1,6 @@
 //
 //  DigitalOutputContext.cpp
-//  VirtualSound
+//  SoundPusher
 //
 //  Created by Daniel Vollmer on 16/12/2015.
 //
@@ -12,7 +12,6 @@
 #include "TPCircularBuffer.h"
 
 #include "DigitalOutputContext.hpp"
-#include "MiniLogger.hpp"
 
 
 /// @return The best matching input format for an encoder that outputs to outFormat with the given channel layout.
@@ -37,7 +36,7 @@ DigitalOutputContext::DigitalOutputContext(AudioObjectID device, AudioObjectID s
 : _device(device), _stream(stream), _format(format), _channelLayoutTag(channelLayoutTag)
 , _encoder(GetBestInputFormatForOutputFormat(_format, _channelLayoutTag), _channelLayoutTag, _format)
 , _inputBufferNumFramesPointer(nullptr), _minInputFramesAtOutputTime(0)
-, _deviceIOProcID(nullptr), _isRunning(false)
+, _log(DefaultLogger.GetLevel(), "SoundPusher.OutIOProc"), _deviceIOProcID(nullptr), _isRunning(false)
 , _hogger(_device, true), _originalFormat(_stream, format)
 {
   OSStatus status = AudioDeviceCreateIOProcID(_device, DeviceIOProcFunc, this, &_deviceIOProcID);
@@ -134,7 +133,7 @@ OSStatus DigitalOutputContext::DeviceIOProcFunc(AudioObjectID inDevice, const Au
     const auto availableInputFrames = me->_inputBufferNumFramesPointer->load(std::memory_order_relaxed);
     if (availableInputFrames > me->_minInputFramesAtOutputTime)
     {
-      DefaultLogger.Info("OutIOProc: %u input frames at output time, reducing to %u frames\n", availableInputFrames, me->_minInputFramesAtOutputTime);
+      me->_log.Info("%u input frames at output time, reducing to %u frames", availableInputFrames, me->_minInputFramesAtOutputTime);
       me->_inputBufferNumFramesPointer->store(me->_minInputFramesAtOutputTime, std::memory_order_relaxed);
       // we drop the newer frames instead of the stale ones so we don't have to copy around
     }
@@ -145,7 +144,7 @@ OSStatus DigitalOutputContext::DeviceIOProcFunc(AudioObjectID inDevice, const Au
     buffer = bufferBase + me->_packetBuffer.tail - packetSize;
     if (buffer < bufferBase)
       buffer += me->_packetBuffer.length; // wrap around to 2nd virtual copy at the back
-    DefaultLogger.Info("OutIOProc: %u/%u available, min input frames is %u\n", availableBytes, outOutputData->mBuffers[0].mDataByteSize, me->_minInputFramesAtOutputTime);
+    me->_log.Info("%u/%u available, min input frames is %u", availableBytes, outOutputData->mBuffers[0].mDataByteSize, me->_minInputFramesAtOutputTime);
     memcpy(outOutputData->mBuffers[0].mData, buffer, outOutputData->mBuffers[0].mDataByteSize);
   }
   return noErr;

@@ -1,6 +1,6 @@
 //
 //  ForwardingInputTap.cpp
-//  VirtualSound
+//  SoundPusher
 //
 //  Created by Daniel Vollmer on 16/12/2015.
 //
@@ -35,10 +35,9 @@ static uint32_t GetMinFrames(const uint32_t packetSize, const uint32_t framesPer
   return packetSize - minInputCyclesPerOutputCycle * framesPerInputCycle;
 }
 
-ForwardingInputTap::ForwardingInputTap(AudioObjectID device, AudioObjectID stream,
-  DigitalOutputContext &outContext)
-: _device(device), _stream(stream), _format(outContext.GetInputFormat())
-, _outContext(outContext), _deviceIOProcID(nullptr), _isRunning(false)
+ForwardingInputTap::ForwardingInputTap(AudioObjectID device, AudioObjectID stream, DigitalOutputContext &outContext)
+: _device(device), _stream(stream), _format(outContext.GetInputFormat()), _outContext(outContext)
+, _deviceIOProcID(nullptr), _isRunning(false)
 {
   OSStatus status = AudioDeviceCreateIOProcID(_device, DeviceIOProcFunc, this, &_deviceIOProcID);
   if (status != noErr)

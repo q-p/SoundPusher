@@ -9,44 +9,50 @@
 #include <cstdarg>
 #include <cstdio>
 #include <chrono>
-#include <syslog.h>
 
 #include "MiniLogger.hpp"
 
-
 MiniLogger DefaultLogger;
 
-
-static void DoLog(int priority, const char *format, va_list args)
+MiniLogger::MiniLogger(const Level level, const char *thread)
+: _level(level), _clientHandle(0), _messageDict(0)
 {
-  va_list argCopy;
-  va_copy(argCopy, args);
-  vsyslog(priority, format, args);
-  const auto now = std::time(nullptr);
-  const auto local = std::localtime(&now);
-  fprintf(stderr, "%04i-%02i-%02i %02i:%02i:%02i ", 1900 + local->tm_year, local->tm_mon, local->tm_mday, local->tm_hour, local->tm_min, local->tm_sec);
-  vfprintf(stderr, format, argCopy);
-  va_end(argCopy);
-  fputs("\n", stderr);
+  if (thread)
+  { // create a (non-thread-safe) logger for this
+    _clientHandle = asl_open(NULL, NULL, ASL_OPT_STDERR | ASL_OPT_NO_DELAY);
+    _messageDict = asl_new(ASL_TYPE_MSG);
+    asl_set(_messageDict, ASL_KEY_SENDER, thread);
+  }
+  else
+  {
+    asl_add_log_file(NULL, STDERR_FILENO);
+  }
 }
 
-MiniLogger::MiniLogger(const Level level)
-: _level(level)
-{ }
+MiniLogger::~MiniLogger()
+{
+  if (_messageDict)
+    asl_release(_messageDict);
+  if (_clientHandle)
+    asl_close(_clientHandle);
+}
 
-#define FORWARD_METHOD_DEF(Name, Prio) \
+#define FORWARD_METHOD_DEF(Name) \
 void MiniLogger::Name(const char *format, ...) const \
 { \
   if (_level < Log##Name) \
     return; \
   va_list args; \
   va_start(args, format); \
-  DoLog(Prio, format, args); \
+  asl_vlog(_clientHandle, _messageDict, Log##Name, format, args); \
   va_end(args); \
 }
 
-FORWARD_METHOD_DEF(Error, LOG_ERR)
-FORWARD_METHOD_DEF(Warn, LOG_WARNING)
-FORWARD_METHOD_DEF(Note, LOG_NOTICE)
-FORWARD_METHOD_DEF(Info, LOG_INFO)
-FORWARD_METHOD_DEF(Debug, LOG_DEBUG)
+FORWARD_METHOD_DEF(Emergency)
+FORWARD_METHOD_DEF(Alert)
+FORWARD_METHOD_DEF(Crit)
+FORWARD_METHOD_DEF(Err)
+FORWARD_METHOD_DEF(Warning)
+FORWARD_METHOD_DEF(Notice)
+FORWARD_METHOD_DEF(Info)
+FORWARD_METHOD_DEF(Debug)

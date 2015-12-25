@@ -1,6 +1,6 @@
 //
 //  SPDIFAudioEncoder.hpp
-//  VirtualSound
+//  SoundPusher
 //
 //  Created by Daniel Vollmer on 15/12/2015.
 //

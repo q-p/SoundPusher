@@ -1,6 +1,6 @@
 //
 //  DigitalOutputContext.hpp
-//  VirtualSound
+//  SoundPusher
 //
 //  Created by Daniel Vollmer on 16/12/2015.
 //
@@ -14,6 +14,7 @@
 #include "CoreAudio/CoreAudio.h"
 #include "TPCircularBuffer.h"
 
+#include "MiniLogger.hpp"
 #include "CoreAudioHelper.hpp"
 #include "SPDIFAudioEncoder.hpp"
 
@@ -86,6 +87,8 @@ protected:
   /// How many frames we need to have in the input buffer at the time of a (packed) output buffer interrupt.
   uint32_t _minInputFramesAtOutputTime;
 
+  /// The logger for the IOProc (which is called from a different (real-time) thread).
+  MiniLogger _log;
   /// IOProc handle.
   AudioDeviceIOProcID _deviceIOProcID;
 

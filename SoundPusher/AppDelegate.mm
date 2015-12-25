@@ -57,7 +57,7 @@ struct Device
       return false;
     if (identifier.outStreamIndex >= _streams.size())
     {
-      DefaultLogger.Warn("Device %s has %zu streams, but checked one is %zu", _uid.UTF8String, _streams.size(), identifier.outStreamIndex);
+      DefaultLogger.Warning("Device %s has %zu streams, but checked one is %zu", _uid.UTF8String, _streams.size(), identifier.outStreamIndex);
       return false;
     }
     return true;
@@ -139,20 +139,20 @@ struct ForwardingChain
   {
     OSStatus status = AudioObjectAddPropertyListener(_output._device, &DeviceAliveAddress, DeviceAliveListenerFunc, this);
     if (status != noErr)
-      DefaultLogger.Warn("Could not register alive-listener for output device %u", _output._device);
+      DefaultLogger.Warning("Could not register alive-listener for output device %u", _output._device);
     status = AudioObjectAddPropertyListener(_input._device, &DeviceAliveAddress, DeviceAliveListenerFunc, this);
     if (status != noErr)
-      DefaultLogger.Warn("Could not register alive-listener for input device %u", _input._device);
+      DefaultLogger.Warning("Could not register alive-listener for input device %u", _input._device);
   }
 
   ~ForwardingChain()
   {
     OSStatus status = AudioObjectRemovePropertyListener(_output._device, &DeviceAliveAddress, DeviceAliveListenerFunc, this);
     if (status != noErr)
-      DefaultLogger.Warn("Could not remove alive-listener for output device %u", _output._device);
+      DefaultLogger.Warning("Could not remove alive-listener for output device %u", _output._device);
     status = AudioObjectRemovePropertyListener(_input._device, &DeviceAliveAddress, DeviceAliveListenerFunc, this);
     if (status != noErr)
-      DefaultLogger.Warn("Could not remove alive-listener for input device %u", _input._device);
+      DefaultLogger.Warning("Could not remove alive-listener for input device %u", _input._device);
   }
 
   ForwardingChainIdentifier *_identifier;
@@ -263,7 +263,7 @@ static void AttemptToStartMissingChains()
     }
     catch (const std::exception &e)
     {
-      DefaultLogger.Error("Could not initialize chain %s: %s", attempt.description.UTF8String, e.what());
+      DefaultLogger.Err("Could not initialize chain %s: %s", attempt.description.UTF8String, e.what());
     }
   }
   UpdateStatusItem();
@@ -292,7 +292,7 @@ static void AttemptToStartMissingChains()
     [_desiredActiveChains removeObject:identifier];
     [[NSUserDefaults standardUserDefaults] setObject:[_desiredActiveChains.allObjects valueForKey:@"asDictionary"] forKey:@"ActiveChains"];
     if (!didFind)
-      DefaultLogger.Warn("Could not disable chain %s: Not found / active", identifier.description.UTF8String);
+      DefaultLogger.Warning("Could not disable chain %s: Not found / active", identifier.description.UTF8String);
   }
   else
   { // try to add the chain
@@ -300,7 +300,7 @@ static void AttemptToStartMissingChains()
     const auto loopbackDevices = GetLoopbackDevicesWithInput(allDevices);
     if (loopbackDevices.empty())
     {
-      DefaultLogger.Error("LoopbackAudio device is gone, cannot start chain");
+      DefaultLogger.Err("LoopbackAudio device is gone, cannot start chain");
       return;
     }
     const auto outputDevices = GetDevicesWithDigitalOutput(allDevices);
@@ -327,7 +327,7 @@ static void AttemptToStartMissingChains()
       }
       catch (const std::exception &e)
       {
-        DefaultLogger.Error("Could not initialize chain %s: %s", identifier.description.UTF8String, e.what());
+        DefaultLogger.Err("Could not initialize chain %s: %s", identifier.description.UTF8String, e.what());
       }
       break;
     }
@@ -441,12 +441,12 @@ static void AttemptToStartMissingChains()
 
   // register defaults
   [[NSUserDefaults standardUserDefaults] registerDefaults:@{
-    @"LogLevel" : [NSNumber numberWithInt:MiniLogger::LogNote],
+    @"LogLevel" : [NSNumber numberWithInt:MiniLogger::LogNotice],
     @"ActiveChains" : @[]
   }];
 
   { // read defaults
-    const NSInteger level = std::max(static_cast<NSInteger>(MiniLogger::LogNone),
+    const NSInteger level = std::max(static_cast<NSInteger>(MiniLogger::LogEmergency),
       std::min(static_cast<NSInteger>(MiniLogger::LogDebug),
         [[NSUserDefaults standardUserDefaults] integerForKey:@"LogLevel"]));
     DefaultLogger.SetLevel(static_cast<MiniLogger::Level>(level));

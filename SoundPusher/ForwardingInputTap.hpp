@@ -1,6 +1,6 @@
 //
 //  ForwardingInputTap.hpp
-//  VirtualSound
+//  SoundPusher
 //
 //  Created by Daniel Vollmer on 16/12/2015.
 //

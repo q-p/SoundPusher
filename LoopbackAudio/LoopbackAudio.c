@@ -35,21 +35,21 @@
 //#define ALLOW_MULTIPLE_FORMATS
 
 #if DEBUG
-	#include <sys/syslog.h>
+	#include <asl.h>
 
-	#define	DebugMsg(inFormat, ...)	syslog(LOG_NOTICE, inFormat, ## __VA_ARGS__)
+	#define	DebugMsg(Level, inFormat, ...)	asl_log(NULL, NULL, Level, inFormat, ## __VA_ARGS__)
 
 	#define	FailIf(inCondition, inHandler, inMessage)									\
 			if(inCondition)																\
 			{																			\
-				DebugMsg(inMessage);													\
+				DebugMsg(ASL_LEVEL_WARNING, inMessage);									\
 				goto inHandler;															\
 			}
 
 	#define	FailWithAction(inCondition, inAction, inHandler, inMessage)					\
 			if(inCondition)																\
 			{																			\
-				DebugMsg(inMessage);													\
+				DebugMsg(ASL_LEVEL_WARNING, inMessage);									\
 				{ inAction; }															\
 				goto inHandler;															\
 			}
@@ -2846,7 +2846,7 @@ static OSStatus	LoopbackAudio_DoIOOperation(AudioServerPlugInDriverRef inDriver,
 			SInt64 readEnd = readBegin + inIOBufferFrameSize;
 			if (readEnd > gDevice_LastWriteEndInFrames)
 			{ // let's slide the read-offset so we read the latest written data (but no more than that)
-				DebugMsg("LoopbackAudio_ReadInput: adjusting read offset from %lld to %lld", gDevice_ReadOffsetInFrames, gDevice_ReadOffsetInFrames - readEnd + gDevice_LastWriteEndInFrames);
+				DebugMsg(ASL_LEVEL_INFO, "LoopbackAudio_ReadInput: adjusting read offset from %lld to %lld", gDevice_ReadOffsetInFrames, gDevice_ReadOffsetInFrames - readEnd + gDevice_LastWriteEndInFrames);
 				gDevice_ReadOffsetInFrames -= readEnd - gDevice_LastWriteEndInFrames;
 				readBegin = (SInt64)inIOCycleInfo->mInputTime.mSampleTime + gDevice_ReadOffsetInFrames;
 				readEnd = readBegin + inIOBufferFrameSize;
