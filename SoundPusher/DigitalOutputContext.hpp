@@ -10,7 +10,8 @@
 #define DigitalOutputContext_hpp
 
 #include <vector>
-#include <atomic>
+#include <cstdint>
+
 #include "CoreAudio/CoreAudio.h"
 #include "TPCircularBuffer.h"
 
@@ -32,26 +33,25 @@ struct DigitalOutputContext
 
   ~DigitalOutputContext();
 
-  /// @return the number of audio frames in a compressed packet.
-  uint32_t GetNumFramesPerPacket() const { return _encoder.GetNumFramesPerPacket(); }
-  /// @return the input format expected by EncodeAndAppendPacket().
+  /// @return the input format expected by AppendInputFrames().
   const AudioStreamBasicDescription &GetInputFormat() const { return _encoder.GetInFormat(); }
+  /// @return the number of channels in (and thus required for) a compressed packet.
+  uint32_t GetNumInputChannels() const { return GetInputFormat().mChannelsPerFrame; }
+  /// @return the number of audio frames in (and thus required for) a compressed packet.
+  uint32_t GetNumFramesPerPacket() const { return _encoder.GetNumFramesPerPacket(); }
 
-  /// Sets the pointer to the number of frames in the input buffer.
-  void SetInputBufferNumFramesPointer(const std::atomic<uint32_t> *inputBufferNumFramesPointer)
-  { _inputBufferNumFramesPointer = inputBufferNumFramesPointer; }
-
-  /// Encodes the given planar input frames and appends them to the buffer for this output context.
+  /// Appends the given interleaved input frames to the internal buffer.
   /**
-   * Is called by a different thread, but as long as it's only one this is ok, as the buffer is thread-safe for single
-   * write and consumer. The consumer is our IOProc, the producer is the caller of this function (which is the IOProc
-   * of the ForwardingInputTap).
+   * @warning Will be called from a different thread than the output thread!
+   * @param numFrames The number of frames to append.
+   * @param numChannels How many interleaved channels are in the source frames (must match GetNumInputChannels()).
+   * @param frames Pointer to the interleaved input data.
    */
-  void EncodeAndAppendPacket(const uint32_t numFrames, const uint32_t numChannels, const float **inputFrames);
-  /// @return the number of requested input frames to be dropped, called by both threads.
-  int32_t GetNumRequestedInputFrameDrops() const { return _extraInputFrameDropRequest.load(std::memory_order_relaxed); }
-  /// Adds the given number of frames to the number of requested input frames to be dropped, called by both threads.
-  void AddNumRequestedInputFrameDrops(const int32_t num) { _extraInputFrameDropRequest.fetch_add(num, std::memory_order_relaxed); }
+  void AppendInputFrames(const uint32_t numFrames, const uint32_t numChannels, const float *frames)
+  {
+    assert(numChannels == _encoder.GetInFormat().mChannelsPerFrame);
+    TPCircularBufferProduceBytes(&_inputBuffer, frames, numFrames * numChannels * sizeof *frames);
+  }
 
   /// Starts IO for the device.
   void Start();
@@ -68,33 +68,28 @@ struct DigitalOutputContext
   const AudioChannelLayoutTag _channelLayoutTag;
 
 protected:
+  /// Function for deinterleaving from interleaved to planar storage.
+  typedef void (*DeinterleaveFunc)(const uint32_t num, const float *__restrict in, uint32_t outStrideFloat, float *__restrict out);
+
   /// IOProc called when the digital output device needs a new packet.
   static OSStatus DeviceIOProcFunc(AudioObjectID inDevice, const AudioTimeStamp* inNow,
     const AudioBufferList* inInputData, const AudioTimeStamp* inInputTime, AudioBufferList* outOutputData,
     const AudioTimeStamp* inOutputTime, void* inClientData);
 
-  /// Buffer for encoded SPDIF packets (complete only).
-  /**
-   * Read from our IOProc and written to by EncodeAndAppendPacket() (which may be called from a different thread).
-   */
-  TPCircularBuffer _packetBuffer;
-
   /// The encoder for our output packets (not used by us except for EncodeAndAppendPacket()).
   SPDIFAudioEncoder _encoder;
 
-  /// Pointer to the number of frames in the input buffer.
-  const std::atomic<uint32_t> *_inputBufferNumFramesPointer;
-
-  /// Counter for how many input frames we would like to have dropped.
-  /**
-   * This is only incremented by this thread, and only decremented by the input thread (which tries to fulfill the
-   * requests)
-   */
-  std::atomic<int32_t> _extraInputFrameDropRequest;
+  /// Buffer for interleaved input frames.
+  TPCircularBuffer _inputBuffer;
+  /// Deinterleaver from input buffer into the input-pointers.
+  DeinterleaveFunc _deinterleaver;
+  /// These point into the correct offsets into _planarFrames, which holds the actual storage.
+  std::vector<const float *> _planarInputPointers;
+  /// Backing storage for all planes.
+  std::vector<float> _planarFrames;
 
   /// Counter for the approximate number of output cycles, used to monitor minimum available frames over a number of cycles.
   uint32_t _cycleCounter;
-
   /// The minimum number of buffered frames available at output time.
   /**
    * We want this to be >= GetNumFramesPerPacket(), but the larger we keep it (i.e. the more we buffer), the more

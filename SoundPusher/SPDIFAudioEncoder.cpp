@@ -9,6 +9,7 @@
 #include <string>
 #include <cassert>
 #include <cstring>
+#include <cmath>
 #include <type_traits>
 
 #include "SPDIFAudioEncoder.hpp"
@@ -124,19 +125,18 @@ SPDIFAudioEncoder::SPDIFAudioEncoder(const AudioStreamBasicDescription &inFormat
 
   assert(inFormat.mChannelsPerFrame == AudioChannelLayoutTag_GetNumberOfChannels(channelLayoutTag));
 
-  const auto outputBitsPerSec = _outFormat.mSampleRate * _outFormat.mChannelsPerFrame * _outFormat.mBitsPerChannel;
-
   // set up the packet output
   unsigned char *buffer = static_cast<unsigned char *>(av_malloc(MaxBytesPerPacket));
   _muxer->pb = avio_alloc_context(buffer, MaxBytesPerPacket, 1 /* writable */, this, nullptr /* read */,
     WritePacketFunc, nullptr /* seek */);
 
-  AVStream *stream = avformat_new_stream(_muxer, avcodec_find_encoder(AV_CODEC_ID_AC3));
+  AVStream *stream = avformat_new_stream(_muxer, avcodec_find_encoder(codecID));
   assert(stream && stream->codec);
 
   AVCodecContext *coder = stream->codec;
-
-  coder->bit_rate = outputBitsPerSec; // highest fitting bit-rate, FIXME should subtract SPDIF overhead
+  const auto spdifPayloadFactor = static_cast<double>((MaxBytesPerPacket - 4 * _outFormat.mBitsPerChannel / 8)) / MaxBytesPerPacket;
+  const auto outputBitsPerSec = _outFormat.mSampleRate * _outFormat.mChannelsPerFrame * _outFormat.mBitsPerChannel;
+  coder->bit_rate = std::floor(outputBitsPerSec * spdifPayloadFactor);
   static_assert(std::is_same<float, SampleT>::value, "Unexcepted sample type");
   coder->sample_fmt = AV_SAMPLE_FMT_FLTP; // planar float
 
@@ -205,11 +205,12 @@ int SPDIFAudioEncoder::WritePacketFunc(void *opaque, uint8_t *buf, int buf_size)
   assert(me);
   // buffer must've been set-up before
   assert(me->_writePacketBuf && me->_writePacketBufSize >= buf_size);
-  std::memcpy(me->_writePacketBuf, buf, buf_size);
-  // set the buffer to null (so we don't accidentally overwrite an old section) and let ourself know how much we wrote
-  me->_writePacketBuf += buf_size;
-  me->_writePacketBufSize = buf_size;
-  return buf_size;
+  const auto num = std::min(static_cast<uint32_t>(buf_size), me->_writePacketBufSize);
+  std::memcpy(me->_writePacketBuf, buf, num);
+  // update to say how much we've written
+  me->_writePacketBuf += num;
+  me->_writePacketBufSize -= num;
+  return buf_size; // we lie about how much we've written here
 }
 
 uint32_t SPDIFAudioEncoder::EncodePacket(const uint32_t numFrames, const SampleT **inputFrames, uint32_t sizeOutBuffer, uint8_t *outBuffer)
@@ -244,8 +245,11 @@ uint32_t SPDIFAudioEncoder::EncodePacket(const uint32_t numFrames, const SampleT
   status = av_write_frame(_muxer, &_packet);
 	if (status < 0)
     throw LibAVException(status);
-  assert(_writePacketBuf == outBuffer + _writePacketBufSize);
-  _writePacketBuf = nullptr; // don't expect another write, except through us
+  assert(_writePacketBuf >= outBuffer && _writePacketBuf <= outBuffer + sizeOutBuffer);
 
-	return _writePacketBufSize;
+  const auto numBytesWritten = static_cast<uint32_t>(_writePacketBuf - outBuffer);
+  // paranoia
+  _writePacketBuf = nullptr;
+  _writePacketBufSize = 0;
+  return numBytesWritten;
 }
