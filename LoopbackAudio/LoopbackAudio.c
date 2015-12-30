@@ -2878,8 +2878,8 @@ static OSStatus	LoopbackAudio_DoIOOperation(AudioServerPlugInDriverRef inDriver,
 	{
 		case kAudioServerPlugInIOOperationReadInput:
 		{ // provide input from our internal buffer
-			if (gDevice_LastWriteEndInFrames == 0)
-			{ // reading before the first write happened, so output silence
+			if (gDevice_LastWriteEndInFrames == 0 || gMute_Output_Master_Value)
+			{ // reading before the first write happened (or muted), so output silence
 				memset(ioMainBuffer, 0, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame);
 				break;
 			}
