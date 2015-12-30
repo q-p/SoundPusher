@@ -130,7 +130,7 @@ static UInt32					gPlugIn_RefCount				= 0;
 static AudioServerPlugInHostRef	gPlugIn_Host					= NULL;
 
 static AudioChannelLayout		gDevice_CurrentChannelLayout = {
-	kAudioChannelLayoutTag_MPEG_5_1_C, // ChannelLayoutTag
+	kAudioChannelLayoutTag_AudioUnit_5_1, // ChannelLayoutTag
 	0, // ChannelBitmap
 	0, // NumberChannelDescriptions
 };
@@ -179,19 +179,97 @@ static AudioChannelLayoutTag GetDefaultChannelLayout(UInt32 numChannels)
 	switch (numChannels)
 	{
 		case 1:
-			return kAudioChannelLayoutTag_Mono;
+			return kAudioChannelLayoutTag_Mono; // C
 		case 2:
-			return kAudioChannelLayoutTag_Stereo;
+			return kAudioChannelLayoutTag_Stereo; // L R
 		case 3:
-			return kAudioChannelLayoutTag_ITU_2_1;
+			return kAudioChannelLayoutTag_MPEG_3_0_A; // L R C
 		case 4:
-			return kAudioChannelLayoutTag_ITU_2_2;
+			return kAudioChannelLayoutTag_AudioUnit_4; // L R Ls Rs
 		case 5:
-			return kAudioChannelLayoutTag_ITU_3_2;
+			return kAudioChannelLayoutTag_AudioUnit_5_0; // L R Ls Rs C
 		case 6:
-			return kAudioChannelLayoutTag_MPEG_5_1_C;
+			return kAudioChannelLayoutTag_AudioUnit_5_1; // L R C LFE Ls Rs
 	}
 	return kAudioChannelLayoutTag_Unknown;
+}
+
+static void GetPreferredStereoChannels(AudioChannelLayoutTag tag, UInt32 outLeftAndRight[2])
+{
+	switch (tag)
+	{
+		case kAudioChannelLayoutTag_Mono:
+			outLeftAndRight[0] = 1;
+			outLeftAndRight[1] = 1;
+			break;
+		case kAudioChannelLayoutTag_Stereo:
+			outLeftAndRight[0] = 1;
+			outLeftAndRight[1] = 2;
+			break;
+		case kAudioChannelLayoutTag_MPEG_3_0_A:
+			outLeftAndRight[0] = 1;
+			outLeftAndRight[1] = 2;
+			break;
+		case kAudioChannelLayoutTag_AudioUnit_4:
+			outLeftAndRight[0] = 1;
+			outLeftAndRight[1] = 2;
+			break;
+		case kAudioChannelLayoutTag_AudioUnit_5_0:
+			outLeftAndRight[0] = 1;
+			outLeftAndRight[1] = 2;
+			break;
+		case kAudioChannelLayoutTag_AudioUnit_5_1:
+			outLeftAndRight[0] = 1;
+			outLeftAndRight[1] = 2;
+			break;
+		default:
+			outLeftAndRight[0] = 1;
+			outLeftAndRight[1] = AudioChannelLayoutTag_GetNumberOfChannels(tag) > 1 ? 2 : 1;
+			break;
+	}
+}
+
+static void DescribeChannelLayout(AudioChannelLayoutTag tag, AudioChannelLayout *outLayout)
+{
+	outLayout->mChannelLayoutTag = kAudioChannelLayoutTag_UseChannelDescriptions;
+	outLayout->mNumberChannelDescriptions = AudioChannelLayoutTag_GetNumberOfChannels(tag);
+	
+	switch(tag)
+	{
+		case kAudioChannelLayoutTag_Mono:
+			outLayout->mChannelDescriptions[0].mChannelLabel = kAudioChannelLabel_Mono;
+			break;
+		case kAudioChannelLayoutTag_Stereo:
+			outLayout->mChannelDescriptions[0].mChannelLabel = kAudioChannelLabel_Left;
+			outLayout->mChannelDescriptions[1].mChannelLabel = kAudioChannelLabel_Right;
+			break;
+		case kAudioChannelLayoutTag_MPEG_3_0_A:
+			outLayout->mChannelDescriptions[0].mChannelLabel = kAudioChannelLabel_Left;
+			outLayout->mChannelDescriptions[1].mChannelLabel = kAudioChannelLabel_Right;
+			outLayout->mChannelDescriptions[2].mChannelLabel = kAudioChannelLabel_Center;
+			break;
+		case kAudioChannelLayoutTag_AudioUnit_4:
+			outLayout->mChannelDescriptions[0].mChannelLabel = kAudioChannelLabel_Left;
+			outLayout->mChannelDescriptions[1].mChannelLabel = kAudioChannelLabel_Right;
+			outLayout->mChannelDescriptions[2].mChannelLabel = kAudioChannelLabel_LeftSurround;
+			outLayout->mChannelDescriptions[3].mChannelLabel = kAudioChannelLabel_RightSurround;
+			break;
+		case kAudioChannelLayoutTag_AudioUnit_5_0:
+			outLayout->mChannelDescriptions[0].mChannelLabel = kAudioChannelLabel_Left;
+			outLayout->mChannelDescriptions[1].mChannelLabel = kAudioChannelLabel_Right;
+			outLayout->mChannelDescriptions[2].mChannelLabel = kAudioChannelLabel_LeftSurround;
+			outLayout->mChannelDescriptions[3].mChannelLabel = kAudioChannelLabel_RightSurround;
+			outLayout->mChannelDescriptions[4].mChannelLabel = kAudioChannelLabel_Center;
+			break;
+		case kAudioChannelLayoutTag_AudioUnit_5_1:
+			outLayout->mChannelDescriptions[0].mChannelLabel = kAudioChannelLabel_Left;
+			outLayout->mChannelDescriptions[1].mChannelLabel = kAudioChannelLabel_Right;
+			outLayout->mChannelDescriptions[2].mChannelLabel = kAudioChannelLabel_Center;
+			outLayout->mChannelDescriptions[3].mChannelLabel = kAudioChannelLabel_LFEScreen;
+			outLayout->mChannelDescriptions[4].mChannelLabel = kAudioChannelLabel_LeftSurround;
+			outLayout->mChannelDescriptions[5].mChannelLabel = kAudioChannelLabel_RightSurround;
+			break;
+	}
 }
 
 //==================================================================================================
@@ -1726,11 +1804,10 @@ static OSStatus	LoopbackAudio_GetDevicePropertyData(AudioServerPlugInDriverRef i
 
 		case kAudioDevicePropertyPreferredChannelsForStereo:
 			//	This property returns which two channels to use as left/right for stereo
-			//	data by default. Note that the channel numbers are 1-based.xz
+			//	data by default. Note that the channel numbers are 1-based.
 			FailWithAction(inDataSize < (2 * sizeof(UInt32)), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetDevicePropertyData: not enough space for the return value of kAudioDevicePropertyPreferredChannelsForStereo for the device");
-			((UInt32*)outData)[0] = 1;
 			pthread_mutex_lock(&gPlugIn_StateMutex);
-			((UInt32*)outData)[1] = (gDevice_CurrentFormat.mChannelsPerFrame > 1) ? 2 : 1;
+			GetPreferredStereoChannels(gDevice_CurrentChannelLayout.mChannelLayoutTag, (UInt32*)outData);
 			pthread_mutex_unlock(&gPlugIn_StateMutex);
 			*outDataSize = 2 * sizeof(UInt32);
 			break;
@@ -1739,52 +1816,21 @@ static OSStatus	LoopbackAudio_GetDevicePropertyData(AudioServerPlugInDriverRef i
 			//	This property returns the default AudioChannelLayout to use for the device by default.
 			{
 				AudioStreamBasicDescription format;
+				AudioChannelLayout layout;
+				AudioChannelLayout *outLayout = NULL;
+
 				pthread_mutex_lock(&gPlugIn_StateMutex);
 				format = gDevice_CurrentFormat;
+				layout = gDevice_CurrentChannelLayout;
 				pthread_mutex_unlock(&gPlugIn_StateMutex);
+				assert(format.mChannelsPerFrame == AudioChannelLayoutTag_GetNumberOfChannels(layout.mChannelLayoutTag));
+
 				UInt32 theACLSize = offsetof(AudioChannelLayout, mChannelDescriptions) + (format.mChannelsPerFrame * sizeof(AudioChannelDescription));
 				FailWithAction(inDataSize < theACLSize, theAnswer = kAudioHardwareBadPropertySizeError, Done, "Loopback_GetDevicePropertyData: not enough space for the return value of kAudioDevicePropertyPreferredChannelLayout for the device");
-				
-				memset(outData, 0, theACLSize);
-				((AudioChannelLayout*)outData)->mChannelLayoutTag = kAudioChannelLayoutTag_UseChannelDescriptions;
-				((AudioChannelLayout*)outData)->mNumberChannelDescriptions = format.mChannelsPerFrame;
-				
-				switch(format.mChannelsPerFrame)
-				{
-					case 1:
-						((AudioChannelLayout*)outData)->mChannelDescriptions[0].mChannelLabel = kAudioChannelLabel_Mono;
-						break;
-					case 2:
-						((AudioChannelLayout*)outData)->mChannelDescriptions[0].mChannelLabel = kAudioChannelLabel_Left;
-						((AudioChannelLayout*)outData)->mChannelDescriptions[1].mChannelLabel = kAudioChannelLabel_Right;
-						break;
-					case 3:
-						((AudioChannelLayout*)outData)->mChannelDescriptions[0].mChannelLabel = kAudioChannelLabel_Left;
-						((AudioChannelLayout*)outData)->mChannelDescriptions[1].mChannelLabel = kAudioChannelLabel_Right;
-						((AudioChannelLayout*)outData)->mChannelDescriptions[2].mChannelLabel = kAudioChannelLabel_CenterSurround;
-						break;
-					case 4:
-						((AudioChannelLayout*)outData)->mChannelDescriptions[0].mChannelLabel = kAudioChannelLabel_Left;
-						((AudioChannelLayout*)outData)->mChannelDescriptions[1].mChannelLabel = kAudioChannelLabel_Right;
-						((AudioChannelLayout*)outData)->mChannelDescriptions[2].mChannelLabel = kAudioChannelLabel_LeftSurround;
-						((AudioChannelLayout*)outData)->mChannelDescriptions[3].mChannelLabel = kAudioChannelLabel_RightSurround;
-						break;
-					case 5:
-						((AudioChannelLayout*)outData)->mChannelDescriptions[0].mChannelLabel = kAudioChannelLabel_Left;
-						((AudioChannelLayout*)outData)->mChannelDescriptions[1].mChannelLabel = kAudioChannelLabel_Right;
-						((AudioChannelLayout*)outData)->mChannelDescriptions[2].mChannelLabel = kAudioChannelLabel_Center;
-						((AudioChannelLayout*)outData)->mChannelDescriptions[3].mChannelLabel = kAudioChannelLabel_LeftSurround;
-						((AudioChannelLayout*)outData)->mChannelDescriptions[4].mChannelLabel = kAudioChannelLabel_RightSurround;
-						break;
-					case 6:
-						((AudioChannelLayout*)outData)->mChannelDescriptions[0].mChannelLabel = kAudioChannelLabel_Left;
-						((AudioChannelLayout*)outData)->mChannelDescriptions[1].mChannelLabel = kAudioChannelLabel_Right;
-						((AudioChannelLayout*)outData)->mChannelDescriptions[2].mChannelLabel = kAudioChannelLabel_Center;
-						((AudioChannelLayout*)outData)->mChannelDescriptions[3].mChannelLabel = kAudioChannelLabel_LeftSurround;
-						((AudioChannelLayout*)outData)->mChannelDescriptions[4].mChannelLabel = kAudioChannelLabel_RightSurround;
-						((AudioChannelLayout*)outData)->mChannelDescriptions[5].mChannelLabel = kAudioChannelLabel_LFEScreen;
-						break;
-				}
+
+				outLayout = (AudioChannelLayout*)outData;
+				memset(outLayout, 0, theACLSize);
+				DescribeChannelLayout(layout.mChannelLayoutTag, outLayout);
 				*outDataSize = theACLSize;
 			}
 			break;
@@ -2837,7 +2883,7 @@ static OSStatus	LoopbackAudio_DoIOOperation(AudioServerPlugInDriverRef inDriver,
 				memset(ioMainBuffer, 0, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame);
 				break;
 			}
-			if (gDevice_ReadOffsetInFrames ==0)
+			if (gDevice_ReadOffsetInFrames == 0)
 			{ // this is the first read *after* a write happened, so set up the initial read-offset
 				gDevice_ReadOffsetInFrames = gDevice_LastWriteEndInFrames - (SInt64)inIOCycleInfo->mInputTime.mSampleTime - inIOBufferFrameSize;
 			}
@@ -2845,7 +2891,7 @@ static OSStatus	LoopbackAudio_DoIOOperation(AudioServerPlugInDriverRef inDriver,
 			SInt64 readBegin = (SInt64)inIOCycleInfo->mInputTime.mSampleTime + gDevice_ReadOffsetInFrames;
 			SInt64 readEnd = readBegin + inIOBufferFrameSize;
 			if (readEnd > gDevice_LastWriteEndInFrames)
-			{ // let's slide the read-offset so we read the latest written data (but no more than that)
+			{ // slide the read-offset so we read the latest written data (but no more than that)
 				DebugMsg(ASL_LEVEL_INFO, "LoopbackAudio_ReadInput: adjusting read offset from %lld to %lld", gDevice_ReadOffsetInFrames, gDevice_ReadOffsetInFrames - readEnd + gDevice_LastWriteEndInFrames);
 				gDevice_ReadOffsetInFrames -= readEnd - gDevice_LastWriteEndInFrames;
 				readBegin = (SInt64)inIOCycleInfo->mInputTime.mSampleTime + gDevice_ReadOffsetInFrames;

@@ -12,6 +12,8 @@
 #include <stdexcept>
 #include <cstdint>
 #include <memory>
+#include <vector>
+
 #include "CoreAudio/CoreAudio.h"
 extern "C" {
 #include "libavcodec/avcodec.h"
@@ -68,6 +70,8 @@ protected:
 
   /// The input format to the encoder (i.e. what it requires).
   AudioStreamBasicDescription _inFormat;
+  /// For each channel in _inFormat to which libAV channel index it maps.
+  std::vector<uint32_t> _input2LibAVChannel;
   /// The output format to the encoder (i.e. what it produces).
   AudioStreamBasicDescription _outFormat;
   /// The muxer context (which also includes the encoder).

@@ -441,7 +441,7 @@ static void AttemptToStartMissingChains()
 
   // register defaults
   [[NSUserDefaults standardUserDefaults] registerDefaults:@{
-    @"LogLevel" : [NSNumber numberWithInt:MiniLogger::LogNotice],
+    @"LogLevel" : [NSNumber numberWithInt:MiniLogger::LogWarning],
     @"ActiveChains" : @[]
   }];
 

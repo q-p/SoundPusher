@@ -30,79 +30,30 @@ LibAVException::LibAVException(const int error)
 { }
 
 
-static AudioChannelLayoutTag AVChannelLayoutToAudioChannelLayoutTag(uint64_t channelLayout)
+static uint64_t AudioChannelLayoutTagToAVChannelLayout(AudioChannelLayoutTag channelLayoutTag, std::vector<uint32_t> &outInput2LibAVChannel)
 {
-	switch (channelLayout)
-	{
-		case AV_CH_LAYOUT_MONO:
-			return kAudioChannelLayoutTag_Mono;
-		case AV_CH_LAYOUT_STEREO:
-			return kAudioChannelLayoutTag_Stereo;
-		case AV_CH_LAYOUT_2_1:
-			return kAudioChannelLayoutTag_ITU_2_1;
-		case AV_CH_LAYOUT_SURROUND:
-			return kAudioChannelLayoutTag_AC3_3_0;
-		case AV_CH_LAYOUT_2_2:
-		case AV_CH_LAYOUT_QUAD:
-			return kAudioChannelLayoutTag_ITU_2_2;
-		case AV_CH_LAYOUT_4POINT0:
-			return kAudioChannelLayoutTag_AC3_3_1;
-		case AV_CH_LAYOUT_5POINT0:
-		case AV_CH_LAYOUT_5POINT0_BACK:
-			return kAudioChannelLayoutTag_ITU_3_2;
-		// with LFE
-		case AV_CH_LAYOUT_MONO | AV_CH_LOW_FREQUENCY:
-			return kAudioChannelLayoutTag_AC3_1_0_1;
-		case AV_CH_LAYOUT_STEREO | AV_CH_LOW_FREQUENCY:
-			return kAudioChannelLayoutTag_DVD_4;
-		case AV_CH_LAYOUT_2_1 | AV_CH_LOW_FREQUENCY:
-			return kAudioChannelLayoutTag_AC3_2_1_1;
-		case AV_CH_LAYOUT_SURROUND | AV_CH_LOW_FREQUENCY:
-			return kAudioChannelLayoutTag_AC3_3_0_1;
-		case AV_CH_LAYOUT_2_2 | AV_CH_LOW_FREQUENCY:
-		case AV_CH_LAYOUT_QUAD | AV_CH_LOW_FREQUENCY:
-			return kAudioChannelLayoutTag_DVD_18;
-		case AV_CH_LAYOUT_4POINT0 | AV_CH_LOW_FREQUENCY:
-			return kAudioChannelLayoutTag_AC3_3_1_1;
-		case AV_CH_LAYOUT_5POINT1:
-		case AV_CH_LAYOUT_5POINT1_BACK:
-			return kAudioChannelLayoutTag_MPEG_5_1_C;
-	}
-	return kAudioChannelLayoutTag_Unknown;
-}
-
-static uint64_t AudioChannelLayoutTagToAVChannelLayout(AudioChannelLayoutTag channelLayoutTag)
-{
+  outInput2LibAVChannel.resize(AudioChannelLayoutTag_GetNumberOfChannels(channelLayoutTag));
+  for (uint32_t i = 0; i < outInput2LibAVChannel.size(); ++i)
+    outInput2LibAVChannel[i] = i;
 	switch (channelLayoutTag)
 	{
-		case kAudioChannelLayoutTag_Mono:
+		case kAudioChannelLayoutTag_Mono: // C
 			return AV_CH_LAYOUT_MONO;
-		case kAudioChannelLayoutTag_Stereo:
+		case kAudioChannelLayoutTag_Stereo: // L R
 			return AV_CH_LAYOUT_STEREO;
-		case kAudioChannelLayoutTag_ITU_2_1:
-			return AV_CH_LAYOUT_2_1;
-		case kAudioChannelLayoutTag_AC3_3_0:
+		case kAudioChannelLayoutTag_MPEG_3_0_A: // L R C
 			return AV_CH_LAYOUT_SURROUND;
-		case kAudioChannelLayoutTag_ITU_2_2:
-			return AV_CH_LAYOUT_2_2;
-		case kAudioChannelLayoutTag_AC3_3_1:
-			return AV_CH_LAYOUT_4POINT0;
-		case kAudioChannelLayoutTag_ITU_3_2:
+    case kAudioChannelLayoutTag_AudioUnit_4: // L R Ls Rs
+			return AV_CH_LAYOUT_QUAD;
+    case kAudioChannelLayoutTag_AudioUnit_5_0: // L R Ls Rs C
+      outInput2LibAVChannel[2] = 3;
+      outInput2LibAVChannel[3] = 4;
+      outInput2LibAVChannel[4] = 2;
 			return AV_CH_LAYOUT_5POINT0;
-		// with LFE
-		case kAudioChannelLayoutTag_AC3_1_0_1:
-			return AV_CH_LAYOUT_MONO | AV_CH_LOW_FREQUENCY;
-		case kAudioChannelLayoutTag_DVD_4:
-			return AV_CH_LAYOUT_STEREO | AV_CH_LOW_FREQUENCY;
-		case kAudioChannelLayoutTag_AC3_2_1_1:
-			return AV_CH_LAYOUT_2_1 | AV_CH_LOW_FREQUENCY;
-		case kAudioChannelLayoutTag_AC3_3_0_1:
-			return AV_CH_LAYOUT_SURROUND | AV_CH_LOW_FREQUENCY;
-		case kAudioChannelLayoutTag_DVD_18:
-			return AV_CH_LAYOUT_2_2 | AV_CH_LOW_FREQUENCY;
-		case kAudioChannelLayoutTag_AC3_3_1_1:
-			return AV_CH_LAYOUT_4POINT0 | AV_CH_LOW_FREQUENCY;
-		case kAudioChannelLayoutTag_MPEG_5_1_C:
+    case kAudioChannelLayoutTag_AudioUnit_5_1: // L R C LFE Ls Rs
+      outInput2LibAVChannel[3] = 5;
+      outInput2LibAVChannel[4] = 3;
+      outInput2LibAVChannel[5] = 4;
 			return AV_CH_LAYOUT_5POINT1;
 	}
 	return 0;
@@ -141,7 +92,7 @@ SPDIFAudioEncoder::SPDIFAudioEncoder(const AudioStreamBasicDescription &inFormat
   coder->sample_fmt = AV_SAMPLE_FMT_FLTP; // planar float
 
 	coder->sample_rate = _inFormat.mSampleRate;
-	coder->channel_layout = AudioChannelLayoutTagToAVChannelLayout(channelLayoutTag);
+	coder->channel_layout = AudioChannelLayoutTagToAVChannelLayout(channelLayoutTag, _input2LibAVChannel);
 	coder->channels = AudioChannelLayoutTag_GetNumberOfChannels(channelLayoutTag);
 	coder->time_base = (AVRational){1, coder->sample_rate};
 
@@ -223,7 +174,7 @@ uint32_t SPDIFAudioEncoder::EncodePacket(const uint32_t numFrames, const SampleT
   _frame->nb_samples = numFrames;
   for (int i = 0; i < coder->channels; ++i)
   {
-    _frame->data[i] = reinterpret_cast<uint8_t *>(const_cast<SampleT *>(inputFrames[i]));
+    _frame->data[i] = reinterpret_cast<uint8_t *>(const_cast<SampleT *>(inputFrames[_input2LibAVChannel[i]]));
     _frame->linesize[i] = numFrames * sizeof(SampleT);
   }
 
