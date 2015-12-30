@@ -22,6 +22,15 @@ ForwardingInputTap::ForwardingInputTap(AudioObjectID device, AudioObjectID strea
   OSStatus status = AudioDeviceCreateIOProcID(_device, DeviceIOProcFunc, this, &_deviceIOProcID);
   if (status != noErr)
     throw CAHelper::CoreAudioException("ForwardingInputTap::AudioDeviceCreateIOProcID()", status);
+
+  static const AudioObjectPropertyAddress BufferFrameSizeAddress = {kAudioDevicePropertyBufferFrameSize, kAudioObjectPropertyScopeInput, kAudioObjectPropertyElementMaster};
+  const UInt32 desiredBufferFrameSize = std::max(UInt32{128}, _outContext.GetNumFramesPerPacket() / 12);
+  UInt32 dataSize = sizeof desiredBufferFrameSize;
+  status = AudioObjectSetPropertyData(_device, &BufferFrameSizeAddress, 0, NULL, dataSize, &desiredBufferFrameSize);
+  if (status != noErr)
+    _log.Notice("Could not set buffer frame-size to %u", desiredBufferFrameSize);
+  else
+    _log.Info("Set buffer frame-size to %u", desiredBufferFrameSize);
 }
 
 ForwardingInputTap::~ForwardingInputTap()
