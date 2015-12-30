@@ -7,6 +7,7 @@
 //
 
 #include <cassert>
+#include <chrono>
 
 #include "TPCircularBuffer.h"
 
@@ -44,6 +45,32 @@ static void Deinterleave(const uint32_t num, const float *__restrict in, uint32_
   }
 }
 
+double DigitalOutputContext::MeasureSafeIOCycleUsage()
+{
+  // we take the shortest time (which will have positive cache effects), and multiply this by SafetyFactor.
+  static constexpr double SafetyFactor = 4.0;
+  static constexpr uint32_t NumReps = 16;
+
+  const auto numFramesPerPacket = GetNumFramesPerPacket();
+  const auto numChannels = GetNumInputChannels();
+  const auto secsPerPacket = numFramesPerPacket / GetInputFormat().mSampleRate;
+  std::vector<float> input(numFramesPerPacket * numChannels, 0.0f);
+  std::vector<uint8_t> output(_encoder.MaxBytesPerPacket);
+  double minUsage = 1.0 / SafetyFactor; // ensures result will at most be 1.0
+
+  for (auto i = decltype(NumReps){0}; i < NumReps; ++i)
+  {
+    const auto start = std::chrono::steady_clock::now();
+    _deinterleaver(numFramesPerPacket, input.data(), numFramesPerPacket, _planarFrames.data());
+    _encoder.EncodePacket(numFramesPerPacket, _planarInputPointers.data(), static_cast<uint32_t>(output.size()), output.data());
+    const auto end = std::chrono::steady_clock::now();
+    const std::chrono::duration<double> duration = end - start;
+    const auto usage = duration.count() / secsPerPacket;
+    minUsage = std::min(minUsage, usage);
+  }
+  return SafetyFactor * minUsage;
+}
+
 DigitalOutputContext::DigitalOutputContext(AudioObjectID device, AudioObjectID stream,
   const AudioStreamBasicDescription &format, const AudioChannelLayoutTag channelLayoutTag)
 : _device(device), _stream(stream), _format(format), _channelLayoutTag(channelLayoutTag)
@@ -57,7 +84,7 @@ DigitalOutputContext::DigitalOutputContext(AudioObjectID device, AudioObjectID s
     throw CAHelper::CoreAudioException("DigitalOutputContext::AudioDeviceCreateIOProcID()", status);
 
   const auto numFramesPerPacket = GetNumFramesPerPacket();
-  const auto numInputChannels = GetInputFormat().mChannelsPerFrame;
+  const auto numInputChannels = GetNumInputChannels();
   _planarFrames.resize(numFramesPerPacket * numInputChannels, 0.0f);
   _planarInputPointers.resize(numInputChannels);
   for (auto i = decltype(numInputChannels){0}; i < numInputChannels; ++i)
@@ -75,6 +102,15 @@ DigitalOutputContext::DigitalOutputContext(AudioObjectID device, AudioObjectID s
   }
 
   TPCircularBufferInit(&_inputBuffer, 4 * numFramesPerPacket * numInputChannels * sizeof (float));
+
+  const Float32 cycleUsage = static_cast<Float32>(MeasureSafeIOCycleUsage());
+  static const AudioObjectPropertyAddress IOCycleUsageAddress = {kAudioDevicePropertyIOCycleUsage, kAudioObjectPropertyScopeOutput, kAudioObjectPropertyElementMaster};
+  UInt32 dataSize = sizeof cycleUsage;
+  status = AudioObjectSetPropertyData(_device, &IOCycleUsageAddress, 0, NULL, dataSize, &cycleUsage);
+  if (status != noErr)
+    _log.Notice("Could not set IOCycleUsage to %f", static_cast<double>(cycleUsage));
+  else
+    _log.Info("Set estimated IOCycleUsage to %f", static_cast<double>(cycleUsage));
 }
 
 DigitalOutputContext::~DigitalOutputContext()
@@ -116,7 +152,7 @@ OSStatus DigitalOutputContext::DeviceIOProcFunc(AudioObjectID inDevice, const Au
   assert(outOutputData->mNumberBuffers == 1);
 
   const auto numFramesPerPacket = me->GetNumFramesPerPacket();
-  const auto numInputChannels = me->GetInputFormat().mChannelsPerFrame;
+  const auto numInputChannels = me->GetNumInputChannels();
   int32_t availableBytes = 0;
   auto inputBuffer = static_cast<const float *>(TPCircularBufferTail(&me->_inputBuffer, &availableBytes));
   uint32_t availableInputFrames = availableBytes / (numInputChannels * sizeof *inputBuffer);
