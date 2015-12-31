@@ -28,6 +28,7 @@ extern const AudioObjectPropertyAddress ObjectNameAddress;
 std::vector<AudioStreamBasicDescription> GetStreamPhysicalFormats(const AudioObjectID stream);
 std::vector<AudioObjectID> GetStreams(const AudioObjectID device, const bool input);
 std::vector<AudioObjectID> GetDevices();
+void SetStreamsEnabled(const AudioObjectID device, const AudioDeviceIOProcID IOProcID, const bool input, const bool enabled);
 
 /// RAII class for changing the system default device
 struct DefaultDeviceChanger

@@ -8,6 +8,7 @@
 
 #include <cstring>
 #include <cctype>
+#include <memory>
 
 #include "CoreAudioHelper.hpp"
 #include "MiniLogger.hpp"
@@ -60,7 +61,7 @@ std::vector<AudioStreamBasicDescription> GetStreamPhysicalFormats(const AudioObj
   UInt32 dataSize = 0;
   OSStatus status = noErr;
 
-  const AudioObjectPropertyAddress physicalFormatsAddress = {kAudioStreamPropertyAvailablePhysicalFormats, kAudioObjectPropertyScopeGlobal, 0};
+  static const AudioObjectPropertyAddress physicalFormatsAddress = {kAudioStreamPropertyAvailablePhysicalFormats, kAudioObjectPropertyScopeGlobal, 0};
   // num physical formats
   status = AudioObjectGetPropertyDataSize(stream, &physicalFormatsAddress, 0, NULL, &dataSize);
   if (status != noErr)
@@ -86,22 +87,30 @@ std::vector<AudioStreamBasicDescription> GetStreamPhysicalFormats(const AudioObj
   return formats;
 }
 
-std::vector<AudioObjectID> GetStreams(const AudioObjectID device, const bool input)
+
+static UInt32 GetNumStreams(const AudioObjectID device, const bool input)
 {
+  const AudioObjectPropertyAddress streamsAddress = {kAudioDevicePropertyStreams, input ? kAudioObjectPropertyScopeInput : kAudioObjectPropertyScopeOutput, kAudioObjectPropertyElementMaster};
   UInt32 dataSize = 0;
   OSStatus status = noErr;
 
-  const AudioObjectPropertyAddress streamsAddress = {kAudioDevicePropertyStreams, input ? kAudioObjectPropertyScopeInput : kAudioObjectPropertyScopeOutput, kAudioObjectPropertyElementMaster};
   // num streams
   status = AudioObjectGetPropertyDataSize(device, &streamsAddress, 0, NULL, &dataSize);
   if (status != noErr)
-    throw CoreAudioException("GetStreams(): AudioObjectGetPropertyDataSize()", status);
+    throw CoreAudioException("GetNumStreams(): AudioObjectGetPropertyDataSize()", status);
+  return dataSize / sizeof (AudioObjectID);
+}
+
+std::vector<AudioObjectID> GetStreams(const AudioObjectID device, const bool input)
+{
+  const AudioObjectPropertyAddress streamsAddress = {kAudioDevicePropertyStreams, input ? kAudioObjectPropertyScopeInput : kAudioObjectPropertyScopeOutput, kAudioObjectPropertyElementMaster};
+
   // get streams
-  std::vector<AudioObjectID> streams;
-  streams.resize(dataSize / sizeof streams.front());
+  std::vector<AudioObjectID> streams(GetNumStreams(device, input));
   if (!streams.empty())
   {
-    status = AudioObjectGetPropertyData(device, &streamsAddress, 0, NULL, &dataSize, streams.data());
+    UInt32 dataSize = static_cast<UInt32>(streams.size() * sizeof *streams.data());
+    OSStatus status = status = AudioObjectGetPropertyData(device, &streamsAddress, 0, NULL, &dataSize, streams.data());
     if (status != noErr)
       throw CoreAudioException("GetStreams(): AudioObjectGetPropertyData()", status);
     streams.resize(dataSize / sizeof streams.front()); // may not have returned full buffer
@@ -114,7 +123,7 @@ std::vector<AudioObjectID> GetDevices()
   UInt32 dataSize = 0;
   OSStatus status = noErr;
 
-  const AudioObjectPropertyAddress audioDevicesAddress = {kAudioHardwarePropertyDevices, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMaster};
+  static const AudioObjectPropertyAddress audioDevicesAddress = {kAudioHardwarePropertyDevices, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMaster};
 
   // num devices
   status = AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, &audioDevicesAddress, 0, NULL, &dataSize);
@@ -131,6 +140,28 @@ std::vector<AudioObjectID> GetDevices()
     devices.resize(dataSize / sizeof devices.front()); // may not have returned full buffer
   }
   return devices;
+}
+
+void SetStreamsEnabled(const AudioObjectID device, const AudioDeviceIOProcID IOProcID, const bool input, const bool enabled)
+{
+  const AudioObjectPropertyAddress streamUsageAddress = {kAudioDevicePropertyIOProcStreamUsage, input ? kAudioObjectPropertyScopeInput : kAudioObjectPropertyScopeOutput, kAudioObjectPropertyElementMaster};
+
+	const UInt32 numStreams = GetNumStreams(device, input);
+
+  if (numStreams == 0)
+    return;
+
+  std::size_t size = offsetof(AudioHardwareIOProcStreamUsage, mStreamIsOn) + (numStreams * sizeof(UInt32));
+  auto storage = std::make_unique<uint8_t[]>(size);
+  auto *usage = reinterpret_cast<AudioHardwareIOProcStreamUsage *>(storage.get());
+  usage->mIOProc = reinterpret_cast<void *>(IOProcID);
+  usage->mNumberStreams = numStreams;
+  for (UInt32 i = 0; i < numStreams; ++i)
+    usage->mStreamIsOn[i] = enabled;
+
+  OSStatus status = AudioObjectSetPropertyData(device, &streamUsageAddress, 0, NULL, static_cast<UInt32>(size), usage);
+  if (status != noErr)
+    DefaultLogger.Notice("SetStreamsEnabled(): Could set property: %s", Get4CCAsString(status).c_str());
 }
 
 //==================================================================================================

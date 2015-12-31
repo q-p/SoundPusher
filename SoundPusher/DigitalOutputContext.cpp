@@ -82,6 +82,7 @@ DigitalOutputContext::DigitalOutputContext(AudioObjectID device, AudioObjectID s
   OSStatus status = AudioDeviceCreateIOProcID(_device, DeviceIOProcFunc, this, &_deviceIOProcID);
   if (status != noErr)
     throw CAHelper::CoreAudioException("DigitalOutputContext::AudioDeviceCreateIOProcID()", status);
+  CAHelper::SetStreamsEnabled(_device, _deviceIOProcID, true, false); // disable any input streams
 
   const auto numFramesPerPacket = GetNumFramesPerPacket();
   const auto numInputChannels = GetNumInputChannels();
