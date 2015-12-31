@@ -2917,6 +2917,7 @@ static OSStatus	LoopbackAudio_DoIOOperation(AudioServerPlugInDriverRef inDriver,
 			while (readEnd > lastWriteEndInFrames)
 			{ // slide the read-offset so we read the latest written data (but no more than that)
 				const SInt64 oldReadOffsetInFrames = ReadOffsetInFrames;
+				#pragma unused(oldReadOffsetInFrames)
 				const SInt64 newReadOffsetInFrames = ReadOffsetInFrames - (readEnd - lastWriteEndInFrames);
 				if (atomic_compare_exchange_weak_explicit(&gDevice.ReadOffsetInFrames, &ReadOffsetInFrames, newReadOffsetInFrames, memory_order_acq_rel, memory_order_acquire))
 				{
