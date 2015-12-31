@@ -14,6 +14,7 @@
 //==================================================================================================
 
 #include <stdint.h>
+#include <stdatomic.h>
 
 //	System Includes
 #include <CoreAudio/AudioServerPlugIn.h>
@@ -128,50 +129,70 @@ enum
 #define							kPlugIn_BundleID				"de.maven.audio.LoopbackAudio"
 static UInt32					gPlugIn_RefCount				= 0;
 static AudioServerPlugInHostRef	gPlugIn_Host					= NULL;
-
-static AudioChannelLayout		gDevice_CurrentChannelLayout = {
-	kAudioChannelLayoutTag_AudioUnit_5_1, // ChannelLayoutTag
-	0, // ChannelBitmap
-	0, // NumberChannelDescriptions
-};
-static AudioStreamBasicDescription gDevice_CurrentFormat = {
-	48000.0, // SampleRate
-	kAudioFormatLinearPCM,
-	kAudioFormatFlagsNativeFloatPacked,
-	sizeof(float) * 6 /* channels */, // BytesPerPacket
-	1, // FramesPerPacket
-	sizeof(float) * 6 /* channels */, // BytesPerFrame
-	6, // ChannelsPerFrame
-	sizeof(float) * 8, // BitsPerChannel
-	0, // Reserved
-};
-
-// Used for everything else (and may be held for longer)
 static pthread_mutex_t			gPlugIn_StateMutex				= PTHREAD_MUTEX_INITIALIZER;
-// Used for the IO operations (essentially the buffer) and GetZeroTimeStamp
-static volatile OSSpinLock		gDevice_SpinLock				= OS_SPINLOCK_INIT;
 
-static UInt32					gDevice_IOIsRunning				= 0;
+typedef struct
+{
+	// Used for longer locks
+	pthread_mutex_t				Mutex;
+	// Used for the IO operations (essentially the buffer) and GetZeroTimeStamp
+	volatile OSSpinLock			SpinLock;
 
-static Float64					gDevice_HostTicksPerFrame		= 0.0;
-static UInt64					gDevice_NumberTimeStamps		= 0;
-static Float64					gDevice_AnchorSampleTime		= 0.0;
-static UInt64					gDevice_AnchorHostTime			= 0;
-static UInt64					gDevice_TimeLineSeed			= 1;
+	AudioChannelLayout			CurrentChannelLayout;
+	AudioStreamBasicDescription	CurrentFormat;
 
-// We only use the TPCircularBuffer for it's memory-mapping trickery, and write / read from our
-// computed positions without consuming / producing
-static TPCircularBuffer			gDevice_RingBuffer;
+	UInt32						IOIsRunning;
+	Float64						HostTicksPerFrame;
+	UInt64						NumberTimeStamps;
+	Float64						AnchorSampleTime;
+	UInt64						AnchorHostTime;
+	UInt64						TimeLineSeed;
 
-// One past the last frame (not modulo buffer size) we've written
-SInt64							gDevice_LastWriteEndInFrames	= 0;
-// The sliding difference between where we read and write (usually positive because output happens at a later time than input for the same set of buffers)
-SInt64							gDevice_ReadOffsetInFrames		= 0;
+	// We only use the TPCircularBuffer for it's memory-mapping trickery, and write / read from our
+	// computed positions without consuming / producing
+	TPCircularBuffer			RingBuffer;
 
-static bool						gStream_Input_IsActive			= true;
-static bool						gStream_Output_IsActive			= true;
+	// One past the last frame (not modulo buffer size) we've written
+	_Atomic SInt64				LastWriteEndInFrames;
+	// The sliding difference between where we read and write (usually positive because output happens at a later time than input for the same set of buffers)
+	_Atomic SInt64				ReadOffsetInFrames;
 
-static bool						gMute_Output_Master_Value		= false;
+	bool						Stream_Input_IsActive;
+	bool						Stream_Output_IsActive;
+	bool						Stream_Output_Master_Mute;
+} Device;
+
+static Device gDevice = {
+	.Mutex						= PTHREAD_MUTEX_INITIALIZER,
+	.SpinLock					= OS_SPINLOCK_INIT,
+	.CurrentChannelLayout		= {
+		.mChannelLayoutTag			= kAudioChannelLayoutTag_AudioUnit_5_1,
+		.mChannelBitmap				= 0,
+		.mNumberChannelDescriptions	= 0,
+	},
+	.CurrentFormat				= {
+		.mSampleRate		= 48000.0,
+		.mFormatID			= kAudioFormatLinearPCM,
+		.mFormatFlags		= kAudioFormatFlagsNativeFloatPacked,
+		.mBytesPerPacket	= sizeof(float) * 6 /* channels */,
+		.mFramesPerPacket	= 1,
+		.mBytesPerFrame		= sizeof(float) * 6 /* channels */,
+		.mChannelsPerFrame	= 6,
+		.mBitsPerChannel	= sizeof(float) * 8,
+		.mReserved			= 0,
+	},
+	.IOIsRunning				= 0,
+	.HostTicksPerFrame			= 0.0,
+	.NumberTimeStamps			= 0,
+	.AnchorSampleTime			= 0.0,
+	.AnchorHostTime				= 0,
+	.TimeLineSeed				= 1,
+	.LastWriteEndInFrames		= ATOMIC_VAR_INIT(0),
+	.ReadOffsetInFrames			= ATOMIC_VAR_INIT(0),
+	.Stream_Input_IsActive		= true,
+	.Stream_Output_IsActive		= true,
+	.Stream_Output_Master_Mute	= false,
+};
 
 
 static AudioChannelLayoutTag GetDefaultChannelLayout(UInt32 numChannels)
@@ -436,7 +457,7 @@ static ULONG	LoopbackAudio_AddRef(void* inDriver)
 	//	check the arguments
 	FailIf(inDriver != gAudioServerPlugInDriverRef, Done, "LoopbackAudio_AddRef: bad driver reference");
 
-	//	decrement the refcount
+	//	increment the refcount
 	pthread_mutex_lock(&gPlugIn_StateMutex);
 	if(gPlugIn_RefCount < UINT32_MAX)
 	{
@@ -459,7 +480,7 @@ static ULONG	LoopbackAudio_Release(void* inDriver)
 	//	check the arguments
 	FailIf(inDriver != gAudioServerPlugInDriverRef, Done, "LoopbackAudio_Release: bad driver reference");
 
-	//	increment the refcount
+	//	decrement the refcount
 	pthread_mutex_lock(&gPlugIn_StateMutex);
 	if(gPlugIn_RefCount > 0)
 	{
@@ -500,7 +521,7 @@ static OSStatus	LoopbackAudio_Initialize(AudioServerPlugInDriverRef inDriver, Au
 	mach_timebase_info(&theTimeBaseInfo);
 	Float64 theHostClockFrequency = theTimeBaseInfo.denom / theTimeBaseInfo.numer;
 	theHostClockFrequency *= 1000000000.0;
-	gDevice_HostTicksPerFrame = theHostClockFrequency / gDevice_CurrentFormat.mSampleRate;
+	gDevice.HostTicksPerFrame = theHostClockFrequency / gDevice.CurrentFormat.mSampleRate;
 	
 Done:
 	return theAnswer;
@@ -610,7 +631,7 @@ static OSStatus	LoopbackAudio_PerformDeviceConfigurationChange(AudioServerPlugIn
 	FailWithAction((inChangeAction != kChangeRequest_StreamFormat), theAnswer = kAudioHardwareBadObjectError, Done, "Loopback_PerformDeviceConfigurationChange: bad change request");
 
 	//	lock the state mutex
-	pthread_mutex_lock(&gPlugIn_StateMutex);
+	pthread_mutex_lock(&gDevice.Mutex);
 	
 	switch (inChangeAction)
 	{
@@ -618,16 +639,16 @@ static OSStatus	LoopbackAudio_PerformDeviceConfigurationChange(AudioServerPlugIn
 		{
 			AudioStreamBasicDescription *newFormat = (AudioStreamBasicDescription *)inChangeInfo;
 			
-			gDevice_CurrentFormat = *newFormat;
+			gDevice.CurrentFormat = *newFormat;
 			
 			// recalculate the state that depends on the sample rate
 			struct mach_timebase_info theTimeBaseInfo;
 			mach_timebase_info(&theTimeBaseInfo);
 			Float64 theHostClockFrequency = theTimeBaseInfo.denom / theTimeBaseInfo.numer;
 			theHostClockFrequency *= 1000000000.0;
-			gDevice_HostTicksPerFrame = theHostClockFrequency / gDevice_CurrentFormat.mSampleRate;
+			gDevice.HostTicksPerFrame = theHostClockFrequency / gDevice.CurrentFormat.mSampleRate;
 			
-			gDevice_CurrentChannelLayout.mChannelLayoutTag = GetDefaultChannelLayout(gDevice_CurrentFormat.mChannelsPerFrame);
+			gDevice.CurrentChannelLayout.mChannelLayoutTag = GetDefaultChannelLayout(gDevice.CurrentFormat.mChannelsPerFrame);
 			
 			free(newFormat);
 			break;
@@ -638,7 +659,7 @@ static OSStatus	LoopbackAudio_PerformDeviceConfigurationChange(AudioServerPlugIn
 	}
 
 	//	unlock the state mutex
-	pthread_mutex_unlock(&gPlugIn_StateMutex);
+	pthread_mutex_unlock(&gDevice.Mutex);
 	
 Done:
 	return theAnswer;
@@ -1424,7 +1445,7 @@ static OSStatus	LoopbackAudio_GetDevicePropertyDataSize(AudioServerPlugInDriverR
 			break;
 
 		case kAudioDevicePropertyPreferredChannelLayout:
-			*outDataSize = offsetof(AudioChannelLayout, mChannelDescriptions) + (gDevice_CurrentFormat.mChannelsPerFrame * sizeof(AudioChannelDescription));
+			*outDataSize = offsetof(AudioChannelLayout, mChannelDescriptions) + (gDevice.CurrentFormat.mChannelsPerFrame * sizeof(AudioChannelDescription));
 			break;
 
 		case kAudioDevicePropertyZeroTimeStampPeriod:
@@ -1637,9 +1658,9 @@ static OSStatus	LoopbackAudio_GetDevicePropertyData(AudioServerPlugInDriverRef i
 			//	This property returns whether or not IO is running for the device. Note that
 			//	we need to take both the state lock to check this value for thread safety.
 			FailWithAction(inDataSize < sizeof(UInt32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetDevicePropertyData: not enough space for the return value of kAudioDevicePropertyDeviceIsRunning for the device");
-			pthread_mutex_lock(&gPlugIn_StateMutex);
-			*((UInt32*)outData) = ((gDevice_IOIsRunning > 0) > 0) ? 1 : 0;
-			pthread_mutex_unlock(&gPlugIn_StateMutex);
+			pthread_mutex_lock(&gDevice.Mutex);
+			*((UInt32*)outData) = ((gDevice.IOIsRunning > 0) > 0) ? 1 : 0;
+			pthread_mutex_unlock(&gDevice.Mutex);
 			*outDataSize = sizeof(UInt32);
 			break;
 
@@ -1762,9 +1783,9 @@ static OSStatus	LoopbackAudio_GetDevicePropertyData(AudioServerPlugInDriverRef i
 			//	This property returns the nominal sample rate of the device. Note that we
 			//	only need to take the state lock to get this value.
 			FailWithAction(inDataSize < sizeof(Float64), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetDevicePropertyData: not enough space for the return value of kAudioDevicePropertyNominalSampleRate for the device");
-			pthread_mutex_lock(&gPlugIn_StateMutex);
-			*((Float64*)outData) = gDevice_CurrentFormat.mSampleRate;
-			pthread_mutex_unlock(&gPlugIn_StateMutex);
+			pthread_mutex_lock(&gDevice.Mutex);
+			*((Float64*)outData) = gDevice.CurrentFormat.mSampleRate;
+			pthread_mutex_unlock(&gDevice.Mutex);
 			*outDataSize = sizeof(Float64);
 			break;
 
@@ -1806,9 +1827,9 @@ static OSStatus	LoopbackAudio_GetDevicePropertyData(AudioServerPlugInDriverRef i
 			//	This property returns which two channels to use as left/right for stereo
 			//	data by default. Note that the channel numbers are 1-based.
 			FailWithAction(inDataSize < (2 * sizeof(UInt32)), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetDevicePropertyData: not enough space for the return value of kAudioDevicePropertyPreferredChannelsForStereo for the device");
-			pthread_mutex_lock(&gPlugIn_StateMutex);
-			GetPreferredStereoChannels(gDevice_CurrentChannelLayout.mChannelLayoutTag, (UInt32*)outData);
-			pthread_mutex_unlock(&gPlugIn_StateMutex);
+			pthread_mutex_lock(&gDevice.Mutex);
+			GetPreferredStereoChannels(gDevice.CurrentChannelLayout.mChannelLayoutTag, (UInt32*)outData);
+			pthread_mutex_unlock(&gDevice.Mutex);
 			*outDataSize = 2 * sizeof(UInt32);
 			break;
 
@@ -1819,10 +1840,10 @@ static OSStatus	LoopbackAudio_GetDevicePropertyData(AudioServerPlugInDriverRef i
 				AudioChannelLayout layout;
 				AudioChannelLayout *outLayout = NULL;
 
-				pthread_mutex_lock(&gPlugIn_StateMutex);
-				format = gDevice_CurrentFormat;
-				layout = gDevice_CurrentChannelLayout;
-				pthread_mutex_unlock(&gPlugIn_StateMutex);
+				pthread_mutex_lock(&gDevice.Mutex);
+				format = gDevice.CurrentFormat;
+				layout = gDevice.CurrentChannelLayout;
+				pthread_mutex_unlock(&gDevice.Mutex);
 				assert(format.mChannelsPerFrame == AudioChannelLayoutTag_GetNumberOfChannels(layout.mChannelLayoutTag));
 
 				UInt32 theACLSize = offsetof(AudioChannelLayout, mChannelDescriptions) + (format.mChannelsPerFrame * sizeof(AudioChannelDescription));
@@ -1893,9 +1914,9 @@ static OSStatus	LoopbackAudio_SetDevicePropertyData(AudioServerPlugInDriverRef i
 
 			AudioStreamBasicDescription theOldFormat;
 			//	make sure that the new value is different than the old value
-			pthread_mutex_lock(&gPlugIn_StateMutex);
-			theOldFormat = gDevice_CurrentFormat;
-			pthread_mutex_unlock(&gPlugIn_StateMutex);
+			pthread_mutex_lock(&gDevice.Mutex);
+			theOldFormat = gDevice.CurrentFormat;
+			pthread_mutex_unlock(&gDevice.Mutex);
 			if (*((const Float64*)inData) != theOldFormat.mSampleRate)
 			{
 				AudioStreamBasicDescription *newFormat = (AudioStreamBasicDescription *)malloc(sizeof *newFormat);
@@ -2136,9 +2157,9 @@ static OSStatus	LoopbackAudio_GetStreamPropertyData(AudioServerPlugInDriverRef i
 			//	be used for IO. Note that we need to take the state lock to examine this
 			//	value.
 			FailWithAction(inDataSize < sizeof(UInt32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetStreamPropertyData: not enough space for the return value of kAudioStreamPropertyIsActive for the stream");
-			pthread_mutex_lock(&gPlugIn_StateMutex);
-			*((UInt32*)outData) = (inObjectID == kObjectID_Stream_Input) ? gStream_Input_IsActive : gStream_Output_IsActive;
-			pthread_mutex_unlock(&gPlugIn_StateMutex);
+			pthread_mutex_lock(&gDevice.Mutex);
+			*((UInt32*)outData) = (inObjectID == kObjectID_Stream_Input) ? gDevice.Stream_Input_IsActive : gDevice.Stream_Output_IsActive;
+			pthread_mutex_unlock(&gDevice.Mutex);
 			*outDataSize = sizeof(UInt32);
 			break;
 
@@ -2184,9 +2205,9 @@ static OSStatus	LoopbackAudio_GetStreamPropertyData(AudioServerPlugInDriverRef i
 			//	Note that for devices that don't override the mix operation, the virtual
 			//	format has to be the same as the physical format.
 			FailWithAction(inDataSize < sizeof(AudioStreamBasicDescription), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetStreamPropertyData: not enough space for the return value of kAudioStreamPropertyVirtualFormat for the stream");
-			pthread_mutex_lock(&gPlugIn_StateMutex);
-			memcpy(outData, &gDevice_CurrentFormat, sizeof (AudioStreamBasicDescription));
-			pthread_mutex_unlock(&gPlugIn_StateMutex);
+			pthread_mutex_lock(&gDevice.Mutex);
+			memcpy(outData, &gDevice.CurrentFormat, sizeof (AudioStreamBasicDescription));
+			pthread_mutex_unlock(&gDevice.Mutex);
 			*outDataSize = sizeof(AudioStreamBasicDescription);
 			break;
 
@@ -2263,12 +2284,12 @@ static OSStatus	LoopbackAudio_SetStreamPropertyData(AudioServerPlugInDriverRef i
 			//	Changing the active state of a stream doesn't affect IO or change the structure
 			//	so we can just save the state and send the notification.
 			FailWithAction(inDataSize != sizeof(UInt32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_SetStreamPropertyData: wrong size for the data for kAudioDevicePropertyNominalSampleRate");
-			pthread_mutex_lock(&gPlugIn_StateMutex);
+			pthread_mutex_lock(&gDevice.Mutex);
 			if(inObjectID == kObjectID_Stream_Input)
 			{
-				if(gStream_Input_IsActive != (*((const UInt32*)inData) != 0))
+				if(gDevice.Stream_Input_IsActive != (*((const UInt32*)inData) != 0))
 				{
-					gStream_Input_IsActive = *((const UInt32*)inData) != 0;
+					gDevice.Stream_Input_IsActive = *((const UInt32*)inData) != 0;
 					*outNumberPropertiesChanged = 1;
 					outChangedAddresses[0].mSelector = kAudioStreamPropertyIsActive;
 					outChangedAddresses[0].mScope = kAudioObjectPropertyScopeGlobal;
@@ -2277,16 +2298,16 @@ static OSStatus	LoopbackAudio_SetStreamPropertyData(AudioServerPlugInDriverRef i
 			}
 			else
 			{
-				if(gStream_Output_IsActive != (*((const UInt32*)inData) != 0))
+				if(gDevice.Stream_Output_IsActive != (*((const UInt32*)inData) != 0))
 				{
-					gStream_Output_IsActive = *((const UInt32*)inData) != 0;
+					gDevice.Stream_Output_IsActive = *((const UInt32*)inData) != 0;
 					*outNumberPropertiesChanged = 1;
 					outChangedAddresses[0].mSelector = kAudioStreamPropertyIsActive;
 					outChangedAddresses[0].mScope = kAudioObjectPropertyScopeGlobal;
 					outChangedAddresses[0].mElement = kAudioObjectPropertyElementMaster;
 				}
 			}
-			pthread_mutex_unlock(&gPlugIn_StateMutex);
+			pthread_mutex_unlock(&gDevice.Mutex);
 			break;
 			
 		case kAudioStreamPropertyVirtualFormat:
@@ -2317,9 +2338,9 @@ static OSStatus	LoopbackAudio_SetStreamPropertyData(AudioServerPlugInDriverRef i
 			FailWithAction(i == kNumSupportedSampleRates, theAnswer = kAudioHardwareIllegalOperationError, Done, "Loopback_SetStreamPropertyData: unsupported sample rate for kAudioStreamPropertyPhysicalFormat");
 
 			//	If we made it this far, the requested format is something we support, so make sure the sample rate is actually different
-			pthread_mutex_lock(&gPlugIn_StateMutex);
-			currentAudioFormat = gDevice_CurrentFormat;
-			pthread_mutex_unlock(&gPlugIn_StateMutex);
+			pthread_mutex_lock(&gDevice.Mutex);
+			currentAudioFormat = gDevice.CurrentFormat;
+			pthread_mutex_unlock(&gDevice.Mutex);
 
 			if(memcmp(newAudioFormat, &currentAudioFormat, sizeof *newAudioFormat) != 0)
 			{
@@ -2568,9 +2589,9 @@ static OSStatus	LoopbackAudio_GetControlPropertyData(AudioServerPlugInDriverRef 
 					//	and audio can be heard and 1 means that mute is on and audio cannot be heard.
 					//	Note that we need to take the state lock to examine this value.
 					FailWithAction(inDataSize < sizeof(UInt32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetControlPropertyData: not enough space for the return value of kAudioBooleanControlPropertyValue for the mute control");
-					pthread_mutex_lock(&gPlugIn_StateMutex);
-					*((UInt32*)outData) = gMute_Output_Master_Value ? 1 : 0;
-					pthread_mutex_unlock(&gPlugIn_StateMutex);
+					pthread_mutex_lock(&gDevice.Mutex);
+					*((UInt32*)outData) = gDevice.Stream_Output_Master_Mute ? 1 : 0;
+					pthread_mutex_unlock(&gDevice.Mutex);
 					*outDataSize = sizeof(UInt32);
 					break;
 
@@ -2615,16 +2636,16 @@ static OSStatus	LoopbackAudio_SetControlPropertyData(AudioServerPlugInDriverRef 
 			{
 				case kAudioBooleanControlPropertyValue:
 					FailWithAction(inDataSize != sizeof(UInt32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_SetControlPropertyData: wrong size for the data for kAudioBooleanControlPropertyValue");
-					pthread_mutex_lock(&gPlugIn_StateMutex);
-					if(gMute_Output_Master_Value != (*((const UInt32*)inData) != 0))
+					pthread_mutex_lock(&gDevice.Mutex);
+					if(gDevice.Stream_Output_Master_Mute != (*((const UInt32*)inData) != 0))
 					{
-						gMute_Output_Master_Value = *((const UInt32*)inData) != 0;
+						gDevice.Stream_Output_Master_Mute = *((const UInt32*)inData) != 0;
 						*outNumberPropertiesChanged = 1;
 						outChangedAddresses[0].mSelector = kAudioBooleanControlPropertyValue;
 						outChangedAddresses[0].mScope = kAudioObjectPropertyScopeGlobal;
 						outChangedAddresses[0].mElement = kAudioObjectPropertyElementMaster;
 					}
-					pthread_mutex_unlock(&gPlugIn_StateMutex);
+					pthread_mutex_unlock(&gDevice.Mutex);
 					break;
 				
 				default:
@@ -2662,38 +2683,38 @@ static OSStatus	LoopbackAudio_StartIO(AudioServerPlugInDriverRef inDriver, Audio
 	FailWithAction(inDeviceObjectID != kObjectID_Device, theAnswer = kAudioHardwareBadObjectError, Done, "LoopbackAudio_StartIO: bad device ID");
 
 	//	we need to hold the state lock
-	pthread_mutex_lock(&gPlugIn_StateMutex);
+	pthread_mutex_lock(&gDevice.Mutex);
 	
 	//	figure out what we need to do
-	if(gDevice_IOIsRunning == UINT32_MAX)
+	if(gDevice.IOIsRunning == UINT32_MAX)
 	{
 		//	overflowing is an error
 		theAnswer = kAudioHardwareIllegalOperationError;
 	}
-	else if(gDevice_IOIsRunning == 0)
+	else if(gDevice.IOIsRunning == 0)
 	{
 		//	We need to start the hardware, which in this case is just anchoring the time line.
-		TPCircularBufferInit(&gDevice_RingBuffer, kDevice_RingBuffNumFrames * gDevice_CurrentFormat.mBytesPerFrame);
-		memset(gDevice_RingBuffer.buffer, 0, gDevice_RingBuffer.length);
+		TPCircularBufferInit(&gDevice.RingBuffer, kDevice_RingBuffNumFrames * gDevice.CurrentFormat.mBytesPerFrame);
+		memset(gDevice.RingBuffer.buffer, 0, gDevice.RingBuffer.length);
 
-		gDevice_LastWriteEndInFrames = 0;
-		gDevice_ReadOffsetInFrames = 0;
+		gDevice.LastWriteEndInFrames = 0;
+		gDevice.ReadOffsetInFrames = 0;
 
-		gDevice_TimeLineSeed = 1;
-		gDevice_NumberTimeStamps = 0;
-		gDevice_AnchorSampleTime = 0;
-		gDevice_AnchorHostTime = mach_absolute_time();
+		gDevice.TimeLineSeed = 1;
+		gDevice.NumberTimeStamps = 0;
+		gDevice.AnchorSampleTime = 0;
+		gDevice.AnchorHostTime = mach_absolute_time();
 
-		gDevice_IOIsRunning = 1;
+		gDevice.IOIsRunning = 1;
 	}
 	else
 	{
 		//	IO is already running, so just bump the counter
-		++gDevice_IOIsRunning;
+		++gDevice.IOIsRunning;
 	}
 	
 	//	unlock the state lock
-	pthread_mutex_unlock(&gPlugIn_StateMutex);
+	pthread_mutex_unlock(&gDevice.Mutex);
 	
 Done:
 	return theAnswer;
@@ -2714,28 +2735,28 @@ static OSStatus	LoopbackAudio_StopIO(AudioServerPlugInDriverRef inDriver, AudioO
 	FailWithAction(inDeviceObjectID != kObjectID_Device, theAnswer = kAudioHardwareBadObjectError, Done, "LoopbackAudio_StopIO: bad device ID");
 
 	//	we need to hold the state lock
-	pthread_mutex_lock(&gPlugIn_StateMutex);
+	pthread_mutex_lock(&gDevice.Mutex);
 	
 	//	figure out what we need to do
-	if(gDevice_IOIsRunning == 0)
+	if(gDevice.IOIsRunning == 0)
 	{
 		//	underflowing is an error
 		theAnswer = kAudioHardwareIllegalOperationError;
 	}
-	else if(gDevice_IOIsRunning == 1)
+	else if(gDevice.IOIsRunning == 1)
 	{
 		//	We need to stop the hardware, which in this case means that there's nothing to do.
-		TPCircularBufferCleanup(&gDevice_RingBuffer);
-		gDevice_IOIsRunning = 0;
+		TPCircularBufferCleanup(&gDevice.RingBuffer);
+		gDevice.IOIsRunning = 0;
 	}
 	else
 	{
 		//	IO is still running, so just bump the counter
-		--gDevice_IOIsRunning;
+		--gDevice.IOIsRunning;
 	}
 	
 	//	unlock the state lock
-	pthread_mutex_unlock(&gPlugIn_StateMutex);
+	pthread_mutex_unlock(&gDevice.Mutex);
 	
 Done:
 	return theAnswer;
@@ -2750,7 +2771,7 @@ static OSStatus	LoopbackAudio_GetZeroTimeStamp(AudioServerPlugInDriverRef inDriv
 	//	where the zero time stamp is updated when wrapping around the ring buffer.
 	//
 	//	For this device, the zero time stamps' sample time increments every kDevice_NumZeroFrames
-	//	frames and the host time increments by kDevice_NumZeroFrames * gDevice_HostTicksPerFrame.
+	//	frames and the host time increments by kDevice_NumZeroFrames * gDevice.HostTicksPerFrame.
 	
 	#pragma unused(inClientID)
 	
@@ -2766,29 +2787,29 @@ static OSStatus	LoopbackAudio_GetZeroTimeStamp(AudioServerPlugInDriverRef inDriv
 	FailWithAction(inDeviceObjectID != kObjectID_Device, theAnswer = kAudioHardwareBadObjectError, Done, "LoopbackAudio_GetZeroTimeStamp: bad device ID");
 
 	//	we need to hold the lock
-	OSSpinLockLock(&gDevice_SpinLock);
+	OSSpinLockLock(&gDevice.SpinLock);
 
 	//	get the current host time
 	theCurrentHostTime = mach_absolute_time();
 	
 	//	calculate the next host time
-	theHostTicksPerRingBuffer = gDevice_HostTicksPerFrame * ((Float64)kDevice_NumZeroFrames);
-	theHostTickOffset = ((Float64)(gDevice_NumberTimeStamps + 1)) * theHostTicksPerRingBuffer;
-	theNextHostTime = gDevice_AnchorHostTime + ((UInt64)theHostTickOffset);
+	theHostTicksPerRingBuffer = gDevice.HostTicksPerFrame * ((Float64)kDevice_NumZeroFrames);
+	theHostTickOffset = ((Float64)(gDevice.NumberTimeStamps + 1)) * theHostTicksPerRingBuffer;
+	theNextHostTime = gDevice.AnchorHostTime + ((UInt64)theHostTickOffset);
 	
 	//	go to the next time if the next host time is less than the current time
 	if(theNextHostTime <= theCurrentHostTime)
 	{
-		++gDevice_NumberTimeStamps;
+		++gDevice.NumberTimeStamps;
 	}
 
 	//	set the return values
-	*outSampleTime = gDevice_NumberTimeStamps * kDevice_NumZeroFrames;
-	*outHostTime = gDevice_AnchorHostTime + (((Float64)gDevice_NumberTimeStamps) * theHostTicksPerRingBuffer);
-	*outSeed = gDevice_TimeLineSeed;
+	*outSampleTime = gDevice.NumberTimeStamps * kDevice_NumZeroFrames;
+	*outHostTime = gDevice.AnchorHostTime + (((Float64)gDevice.NumberTimeStamps) * theHostTicksPerRingBuffer);
+	*outSeed = gDevice.TimeLineSeed;
 
 	//	unlock the state lock
-	OSSpinLockUnlock(&gDevice_SpinLock);
+	OSSpinLockUnlock(&gDevice.SpinLock);
 
 Done:
 	return theAnswer;
@@ -2870,48 +2891,57 @@ static OSStatus	LoopbackAudio_DoIOOperation(AudioServerPlugInDriverRef inDriver,
 	FailWithAction(inDeviceObjectID != kObjectID_Device, theAnswer = kAudioHardwareBadObjectError, Done, "LoopbackAudio_DoIOOperation: bad device ID");
 	FailWithAction((inStreamObjectID != kObjectID_Stream_Input) && (inStreamObjectID != kObjectID_Stream_Output), theAnswer = kAudioHardwareBadObjectError, Done, "LoopbackAudio_DoIOOperation: bad stream ID");
 
-	OSSpinLockLock(&gDevice_SpinLock);
-
-	const UInt32 numFramesInRingBuffer = gDevice_RingBuffer.length / gDevice_CurrentFormat.mBytesPerFrame;
+	const UInt32 numFramesInRingBuffer = gDevice.RingBuffer.length / gDevice.CurrentFormat.mBytesPerFrame;
 
 	switch(inOperationID)
 	{
 		case kAudioServerPlugInIOOperationReadInput:
-		{ // provide input from our internal buffer
-			if (gDevice_LastWriteEndInFrames == 0 || gMute_Output_Master_Value)
+		{ // provide input from our internal buffer: There can be multiple reader threads
+			const SInt64 lastWriteEndInFrames = atomic_load_explicit(&gDevice.LastWriteEndInFrames, memory_order_acquire);
+			if (lastWriteEndInFrames == 0 || gDevice.Stream_Output_Master_Mute)
 			{ // reading before the first write happened (or muted), so output silence
-				memset(ioMainBuffer, 0, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame);
+				memset(ioMainBuffer, 0, inIOBufferFrameSize * gDevice.CurrentFormat.mBytesPerFrame);
 				break;
 			}
-			if (gDevice_ReadOffsetInFrames == 0)
+			SInt64 ReadOffsetInFrames = atomic_load_explicit(&gDevice.ReadOffsetInFrames, memory_order_acquire);
+			if (ReadOffsetInFrames == 0)
 			{ // this is the first read *after* a write happened, so set up the initial read-offset
-				gDevice_ReadOffsetInFrames = gDevice_LastWriteEndInFrames - (SInt64)inIOCycleInfo->mInputTime.mSampleTime - inIOBufferFrameSize;
+				const SInt64 newReadOffsetInFrames = lastWriteEndInFrames - (SInt64)inIOCycleInfo->mInputTime.mSampleTime - inIOBufferFrameSize;
+				if (atomic_compare_exchange_strong_explicit(&gDevice.ReadOffsetInFrames, &ReadOffsetInFrames, newReadOffsetInFrames, memory_order_acq_rel, memory_order_acquire))
+					ReadOffsetInFrames = newReadOffsetInFrames;
+				// else ReadOffsetInFrames already contains updated value
 			}
 
-			SInt64 readBegin = (SInt64)inIOCycleInfo->mInputTime.mSampleTime + gDevice_ReadOffsetInFrames;
+			SInt64 readBegin = (SInt64)inIOCycleInfo->mInputTime.mSampleTime + ReadOffsetInFrames;
 			SInt64 readEnd = readBegin + inIOBufferFrameSize;
-			if (readEnd > gDevice_LastWriteEndInFrames)
+			while (readEnd > lastWriteEndInFrames)
 			{ // slide the read-offset so we read the latest written data (but no more than that)
-				DebugMsg(ASL_LEVEL_INFO, "LoopbackAudio_ReadInput: adjusting read offset from %lld to %lld", gDevice_ReadOffsetInFrames, gDevice_ReadOffsetInFrames - readEnd + gDevice_LastWriteEndInFrames);
-				gDevice_ReadOffsetInFrames -= readEnd - gDevice_LastWriteEndInFrames;
-				readBegin = (SInt64)inIOCycleInfo->mInputTime.mSampleTime + gDevice_ReadOffsetInFrames;
+				const SInt64 oldReadOffsetInFrames = ReadOffsetInFrames;
+				const SInt64 newReadOffsetInFrames = ReadOffsetInFrames - (readEnd - lastWriteEndInFrames);
+				if (atomic_compare_exchange_weak_explicit(&gDevice.ReadOffsetInFrames, &ReadOffsetInFrames, newReadOffsetInFrames, memory_order_acq_rel, memory_order_acquire))
+				{
+					DebugMsg(ASL_LEVEL_INFO, "LoopbackAudio_ReadInput: adjusting read offset from %lld to %lld", oldReadOffsetInFrames, newReadOffsetInFrames);
+					ReadOffsetInFrames = newReadOffsetInFrames;
+				}
+				// else ReadOffsetInFrames already contains updated value
+
+				readBegin = (SInt64)inIOCycleInfo->mInputTime.mSampleTime + ReadOffsetInFrames;
 				readEnd = readBegin + inIOBufferFrameSize;
 			}
-			uint8_t *bufferBegin = gDevice_RingBuffer.buffer + (readBegin % numFramesInRingBuffer) * gDevice_CurrentFormat.mBytesPerFrame;
-			memcpy(ioMainBuffer, bufferBegin, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame);
+
+			uint8_t *bufferBegin = gDevice.RingBuffer.buffer + (readBegin % numFramesInRingBuffer) * gDevice.CurrentFormat.mBytesPerFrame;
+			memcpy(ioMainBuffer, bufferBegin, inIOBufferFrameSize * gDevice.CurrentFormat.mBytesPerFrame);
 			break;
 		}
 		case kAudioServerPlugInIOOperationWriteMix:
-		{ // write input to our internal buffer
+		{ // write input to our internal buffer: There can only be one writer thread
 			const SInt64 writeBegin = (SInt64)inIOCycleInfo->mOutputTime.mSampleTime;
-			uint8_t *bufferBegin = gDevice_RingBuffer.buffer + (writeBegin % numFramesInRingBuffer) * gDevice_CurrentFormat.mBytesPerFrame;
-			memcpy(bufferBegin, ioMainBuffer, inIOBufferFrameSize * gDevice_CurrentFormat.mBytesPerFrame);
-			gDevice_LastWriteEndInFrames = writeBegin + inIOBufferFrameSize;
+			uint8_t *bufferBegin = gDevice.RingBuffer.buffer + (writeBegin % numFramesInRingBuffer) * gDevice.CurrentFormat.mBytesPerFrame;
+			memcpy(bufferBegin, ioMainBuffer, inIOBufferFrameSize * gDevice.CurrentFormat.mBytesPerFrame);
+			atomic_store_explicit(&gDevice.LastWriteEndInFrames, writeBegin + inIOBufferFrameSize, memory_order_release);
 			break;
 		}
 	}
-
-	OSSpinLockUnlock(&gDevice_SpinLock);
 
 Done:
 	return theAnswer;
