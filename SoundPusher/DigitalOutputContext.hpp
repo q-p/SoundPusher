@@ -10,6 +10,7 @@
 #define DigitalOutputContext_hpp
 
 #include <vector>
+#include <atomic>
 #include <cstdint>
 
 #include "CoreAudio/CoreAudio.h"
@@ -53,6 +54,9 @@ struct DigitalOutputContext
     TPCircularBufferProduceBytes(&_inputBuffer, frames, numFrames * numChannels * sizeof *frames);
   }
 
+  /// Enables/disables upmixing from stereo if available.
+  void SetUpmix(const bool enabled);
+
   /// Starts IO for the device.
   void Start();
   /// Stops IO for the device.
@@ -71,6 +75,9 @@ protected:
   /// Function for deinterleaving from interleaved to planar storage.
   typedef void (*DeinterleaveFunc)(const uint32_t num, const float *__restrict in, uint32_t outStrideFloat, float *__restrict out);
 
+  /// @return DeinterleaveFunc to use for the given arguments.
+  static DeinterleaveFunc GetDeinterleaveFunc(const uint32_t numChannels, const bool enableUpmix);
+
   /// @return the over-estimated portion of how much of the output IOCycle we need to to fill the output buffer.
   double MeasureSafeIOCycleUsage();
 
@@ -85,7 +92,7 @@ protected:
   /// Buffer for interleaved input frames.
   TPCircularBuffer _inputBuffer;
   /// Deinterleaver from input buffer into the input-pointers.
-  DeinterleaveFunc _deinterleaver;
+  std::atomic<DeinterleaveFunc> _deinterleaver;
   /// These point into the correct offsets into _planarFrames, which holds the actual storage.
   std::vector<const float *> _planarInputPointers;
   /// Backing storage for all planes.

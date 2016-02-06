@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<document type="com.apple.InterfaceBuilder3.Cocoa.XIB" version="3.0" toolsVersion="9531" systemVersion="15C50" targetRuntime="MacOSX.Cocoa" propertyAccessControl="none" useAutolayout="YES" customObjectInstantitationMethod="direct">
+<document type="com.apple.InterfaceBuilder3.Cocoa.XIB" version="3.0" toolsVersion="9532" systemVersion="15D21" targetRuntime="MacOSX.Cocoa" propertyAccessControl="none" useAutolayout="YES" customObjectInstantitationMethod="direct">
     <dependencies>
-        <deployment identifier="macosx"/>
-        <plugIn identifier="com.apple.InterfaceBuilder.CocoaPlugin" version="9531"/>
+        <plugIn identifier="com.apple.InterfaceBuilder.CocoaPlugin" version="9532"/>
     </dependencies>
     <objects>
         <customObject id="-2" userLabel="File's Owner" customClass="NSApplication">
@@ -14,12 +13,19 @@
         <customObject id="-3" userLabel="Application" customClass="NSObject"/>
         <customObject id="Voe-Tx-rLC" customClass="AppDelegate">
             <connections>
-                <outlet property="menuForStatusItem" destination="xPn-p0-vfY" id="3K9-nE-nWQ"/>
+                <outlet property="statusItemMenu" destination="xPn-p0-vfY" id="SFk-fR-ECb"/>
+                <outlet property="upmixMenuItem" destination="eSE-qp-bja" id="pqT-Kl-LO3"/>
             </connections>
         </customObject>
         <menu title="SoundPusher" systemMenu="apple" autoenablesItems="NO" id="xPn-p0-vfY" userLabel="StatusItemMenu">
             <items>
-                <menuItem isSeparatorItem="YES" id="8wS-BH-wWJ"/>
+                <menuItem isSeparatorItem="YES" id="7oI-u8-gVb"/>
+                <menuItem title="Upmix Stereo" id="eSE-qp-bja">
+                    <modifierMask key="keyEquivalentModifierMask"/>
+                    <connections>
+                        <action selector="toggleUpmix:" target="Voe-Tx-rLC" id="WdH-Dr-f7G"/>
+                    </connections>
+                </menuItem>
                 <menuItem title="Open Website..." id="eOH-0X-OB3">
                     <modifierMask key="keyEquivalentModifierMask"/>
                     <connections>

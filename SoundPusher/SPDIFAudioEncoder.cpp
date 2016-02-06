@@ -98,7 +98,9 @@ SPDIFAudioEncoder::SPDIFAudioEncoder(const AudioStreamBasicDescription &inFormat
 
   stream->time_base = coder->time_base;
 
-  status = avcodec_open2(coder, coder->codec, nullptr /* FIXME opts */);
+  AVDictionary *opts = nullptr;
+  status = avcodec_open2(coder, coder->codec, &opts);
+  av_dict_free(&opts);
   if (status < 0)
   {
     av_free(_muxer->pb->buffer); // allocated by us, not avio

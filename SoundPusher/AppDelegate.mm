@@ -25,7 +25,8 @@ extern "C" {
 #import "AppDelegate.h"
 
 @interface AppDelegate ()
-@property (weak) IBOutlet NSMenu *menuForStatusItem;
+@property (weak) IBOutlet NSMenu *statusItemMenu;
+@property (weak) IBOutlet NSMenuItem *upmixMenuItem;
 @end
 
 @implementation AppDelegate
@@ -168,7 +169,8 @@ NSMutableSet<ForwardingChainIdentifier *> *_desiredActiveChains = [NSMutableSet 
 // the actual instances of running chains
 std::vector<std::unique_ptr<ForwardingChain>> _chains;
 // how many menu items were in the menu originally (because we keep rebuilding parts of it)
-NSInteger _numOriginalMenuItems = 2;
+NSInteger _numOriginalMenuItems = 0;
+bool _enableUpmix = false;
 
 
 static void UpdateStatusItem()
@@ -255,6 +257,8 @@ static void AttemptToStartMissingChains()
         outDevice._device, outStream._stream, outStream._formats.front(),
         kAudioChannelLayoutTag_MPEG_5_1_C);
 
+      newChain->_output.SetUpmix(_enableUpmix);
+
       newChain->_input.Start();
       newChain->_output.Start();
 
@@ -317,6 +321,8 @@ static void AttemptToStartMissingChains()
           outDevice._device, outStream._stream, outStream._formats.front(),
           kAudioChannelLayoutTag_MPEG_5_1_C);
 
+        newChain->_output.SetUpmix(_enableUpmix);
+
         newChain->_input.Start();
         newChain->_output.Start();
 
@@ -334,6 +340,20 @@ static void AttemptToStartMissingChains()
   }
   if (_chains.empty() != chainsWereEmpty)
     UpdateStatusItem();
+}
+
+- (IBAction)toggleUpmix:(NSMenuItem *)item
+{
+  const auto newState = (item.state == NSOnState) ? NSOffState : NSOnState;
+  item.state = newState;
+  if (_enableUpmix != (newState == NSOnState))
+  {
+    _enableUpmix = (newState == NSOnState);
+    [[NSUserDefaults standardUserDefaults] setBool:_enableUpmix forKey:@"Upmix" ];
+
+    for (const auto &chain : _chains)
+      chain->_output.SetUpmix(_enableUpmix);
+  }
 }
 
 
@@ -419,29 +439,10 @@ static void AttemptToStartMissingChains()
  
 - (void)applicationDidFinishLaunching:(NSNotification *)aNotification
 {
-  // Insert code here to initialize your application
-
-//#ifdef DEBUG
-//  av_log_set_level(AV_LOG_VERBOSE);
-//#else
-  av_log_set_level(AV_LOG_ERROR);
-//#endif
-  avcodec_register_all();
-  av_register_all();
-
-  _numOriginalMenuItems = self.menuForStatusItem.numberOfItems;
-
-  {
-    NSStatusBar *bar = [NSStatusBar systemStatusBar];
-    _statusItem = [bar statusItemWithLength:NSSquareStatusItemLength];
-    _statusItem.button.image = [NSImage imageNamed:@"CableCutTemplate"];
-    _statusItem.button.appearsDisabled = YES;
-    [_statusItem setMenu:self.menuForStatusItem];
-  }
-
   // register defaults
   [[NSUserDefaults standardUserDefaults] registerDefaults:@{
     @"LogLevel" : [NSNumber numberWithInt:MiniLogger::LogWarning],
+    @"Upmix" : [NSNumber numberWithBool:NO],
     @"ActiveChains" : @[]
   }];
 
@@ -450,6 +451,9 @@ static void AttemptToStartMissingChains()
       std::min(static_cast<NSInteger>(MiniLogger::LogDebug),
         [[NSUserDefaults standardUserDefaults] integerForKey:@"LogLevel"]));
     DefaultLogger.SetLevel(static_cast<MiniLogger::Level>(level));
+
+    _enableUpmix = [[NSUserDefaults standardUserDefaults] boolForKey:@"Upmix"];
+
     NSArray<NSDictionary *> *desiredActiveArray = [[NSUserDefaults standardUserDefaults] arrayForKey:@"ActiveChains"];
     for (NSDictionary *dict in desiredActiveArray)
     {
@@ -460,6 +464,26 @@ static void AttemptToStartMissingChains()
         continue;
       [_desiredActiveChains addObject:identifier];
     }
+  }
+
+  _numOriginalMenuItems = self.statusItemMenu.numberOfItems; // so we know how many to keep when updating the menu
+
+  _upmixMenuItem.state = _enableUpmix ? NSOnState : NSOffState;
+
+//#ifdef DEBUG
+//  av_log_set_level(AV_LOG_VERBOSE);
+//#else
+  av_log_set_level(AV_LOG_ERROR);
+//#endif
+  avcodec_register_all();
+  av_register_all();
+
+  {
+    NSStatusBar *bar = [NSStatusBar systemStatusBar];
+    _statusItem = [bar statusItemWithLength:NSSquareStatusItemLength];
+    _statusItem.button.image = [NSImage imageNamed:@"CableCutTemplate"];
+    _statusItem.button.appearsDisabled = YES;
+    [_statusItem setMenu:self.statusItemMenu];
   }
 
   AttemptToStartMissingChains();
