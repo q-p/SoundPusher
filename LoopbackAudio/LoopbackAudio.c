@@ -1688,9 +1688,9 @@ static OSStatus	LoopbackAudio_GetDevicePropertyData(AudioServerPlugInDriverRef i
 			//	This property returns the presentation latency of the device. For this,
 			//	device, the value is 0 due to the fact that it always vends silence.
 			FailWithAction(inDataSize < sizeof(UInt32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "LoopbackAudio_GetDevicePropertyData: not enough space for the return value of kAudioDevicePropertyLatency for the device");
-			*((UInt32*)outData) = 0; // FIXME frame-size?
-//			if (inAddress->mScope == kAudioObjectPropertyScopeOutput)
-//				*((UInt32*)outData) = 1536; // frame-size?
+			*((UInt32*)outData) = 0;
+			if (inAddress->mScope == kAudioObjectPropertyScopeOutput)
+				*((UInt32*)outData) = 1536; // FIXME frame-size of SoundPusher output format?
 			*outDataSize = sizeof(UInt32);
 			break;
 
