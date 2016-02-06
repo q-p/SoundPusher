@@ -2881,7 +2881,7 @@ static OSStatus	LoopbackAudio_DoIOOperation(AudioServerPlugInDriverRef inDriver,
 {
 	//	This is called to actuall perform a given operation.
 	
-	#pragma unused(inClientID, inIOCycleInfo, ioSecondaryBuffer)
+	#pragma unused(inClientID, ioSecondaryBuffer)
 	
 	//	declare the local variables
 	OSStatus theAnswer = 0;
@@ -2904,18 +2904,23 @@ static OSStatus	LoopbackAudio_DoIOOperation(AudioServerPlugInDriverRef inDriver,
 				break;
 			}
 			SInt64 ReadOffsetInFrames = atomic_load_explicit(&gDevice.ReadOffsetInFrames, memory_order_acquire);
-			if (ReadOffsetInFrames == 0)
-			{ // this is the first read *after* a write happened, so set up the initial read-offset
+			if (ReadOffsetInFrames <= 0)
+			{ // we have an invalid read offset, so readjust it to match our last write (so we read the most recent data)
 				const SInt64 newReadOffsetInFrames = lastWriteEndInFrames - (SInt64)inIOCycleInfo->mInputTime.mSampleTime - inIOBufferFrameSize;
 				if (atomic_compare_exchange_strong_explicit(&gDevice.ReadOffsetInFrames, &ReadOffsetInFrames, newReadOffsetInFrames, memory_order_acq_rel, memory_order_acquire))
 					ReadOffsetInFrames = newReadOffsetInFrames;
 				// else ReadOffsetInFrames already contains updated value
 			}
+			if (ReadOffsetInFrames < 0)
+			{ // provide silence if data is old
+				memset(ioMainBuffer, 0, inIOBufferFrameSize * gDevice.CurrentFormat.mBytesPerFrame);
+				break;
+			}
 
 			SInt64 readBegin = (SInt64)inIOCycleInfo->mInputTime.mSampleTime + ReadOffsetInFrames;
 			SInt64 readEnd = readBegin + inIOBufferFrameSize;
 			while (readEnd > lastWriteEndInFrames)
-			{ // slide the read-offset so we read the latest written data (but no more than that)
+			{ // we would read beyond the end of the most recent data
 				const SInt64 oldReadOffsetInFrames = ReadOffsetInFrames;
 				#pragma unused(oldReadOffsetInFrames)
 				const SInt64 newReadOffsetInFrames = ReadOffsetInFrames - (readEnd - lastWriteEndInFrames);
