@@ -254,8 +254,7 @@ static void AttemptToStartMissingChains()
     try
     { // create and start-up first
       auto newChain = std::make_unique<ForwardingChain>(attempt, inDevice._device, inDevice._streams.front()._stream,
-        outDevice._device, outStream._stream, outStream._formats.front(),
-        kAudioChannelLayoutTag_MPEG_5_1_C);
+        outDevice._device, outStream._stream, outStream._formats.front(), kAudioChannelLayoutTag_AudioUnit_5_1);
 
       newChain->_output.SetUpmix(_enableUpmix);
 
@@ -318,8 +317,7 @@ static void AttemptToStartMissingChains()
       try
       { // create and start-up first
         auto newChain = std::make_unique<ForwardingChain>(identifier, inDevice._device, inDevice._streams.front()._stream,
-          outDevice._device, outStream._stream, outStream._formats.front(),
-          kAudioChannelLayoutTag_MPEG_5_1_C);
+          outDevice._device, outStream._stream, outStream._formats.front(), kAudioChannelLayoutTag_AudioUnit_5_1);
 
         newChain->_output.SetUpmix(_enableUpmix);
 
@@ -470,11 +468,11 @@ static void AttemptToStartMissingChains()
 
   _upmixMenuItem.state = _enableUpmix ? NSOnState : NSOffState;
 
-//#ifdef DEBUG
-//  av_log_set_level(AV_LOG_VERBOSE);
-//#else
+#ifdef DEBUG
+  av_log_set_level(AV_LOG_VERBOSE);
+#else
   av_log_set_level(AV_LOG_ERROR);
-//#endif
+#endif
   avcodec_register_all();
   av_register_all();
 

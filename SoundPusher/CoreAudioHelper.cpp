@@ -146,7 +146,7 @@ void SetStreamsEnabled(const AudioObjectID device, const AudioDeviceIOProcID IOP
 {
   const AudioObjectPropertyAddress streamUsageAddress = {kAudioDevicePropertyIOProcStreamUsage, input ? kAudioObjectPropertyScopeInput : kAudioObjectPropertyScopeOutput, kAudioObjectPropertyElementMaster};
 
-	const UInt32 numStreams = GetNumStreams(device, input);
+  const UInt32 numStreams = GetNumStreams(device, input);
 
   if (numStreams == 0)
     return;
