@@ -23,6 +23,8 @@
 /* End PBXAggregateTarget section */
 
 /* Begin PBXBuildFile section */
+		8A2460D11D1868330001B40B /* libswresample.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = 8A8578AC1D1867A000CC5C3B /* libswresample.dylib */; };
+		8A2460D21D187AB30001B40B /* libswresample.dylib in Copy FFmpeg libs */ = {isa = PBXBuildFile; fileRef = 8A8578AC1D1867A000CC5C3B /* libswresample.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		8A3E49B21C2C92C5005D7E4F /* Distribution.xml in Resources */ = {isa = PBXBuildFile; fileRef = 8A3E49B01C2C92C5005D7E4F /* Distribution.xml */; };
 		8A3E49B31C2C92C5005D7E4F /* Scripts-Driver in Resources */ = {isa = PBXBuildFile; fileRef = 8A3E49B11C2C92C5005D7E4F /* Scripts-Driver */; };
 		8A65D68F1C2614D90071EBBE /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 8A65D68D1C2614D90071EBBE /* InfoPlist.strings */; };
@@ -36,6 +38,7 @@
 		8A6E3B391C2ABE2600E0918D /* MiniLogger.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 8A6E3B371C2ABE2600E0918D /* MiniLogger.cpp */; };
 		8A7C0D161C1DD24A006EC2C6 /* LoopbackAudio.c in Sources */ = {isa = PBXBuildFile; fileRef = 8A7C0D151C1DD24A006EC2C6 /* LoopbackAudio.c */; };
 		8A7C0D181C1DD691006EC2C6 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 8A7C0D171C1DD691006EC2C6 /* Localizable.strings */; };
+		8A8578AD1D1867A000CC5C3B /* libswresample.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = 8A8578AC1D1867A000CC5C3B /* libswresample.dylib */; };
 		8A8D38EE1C1DE3A500B9A127 /* TPCircularBuffer.c in Sources */ = {isa = PBXBuildFile; fileRef = 8A8D38EC1C1DE3A500B9A127 /* TPCircularBuffer.c */; };
 		8A9757041C204EAA00F20BD7 /* SPDIFAudioEncoder.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 8A9757021C204EAA00F20BD7 /* SPDIFAudioEncoder.cpp */; };
 		8A9757071C21E51800F20BD7 /* DigitalOutputContext.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 8A9757051C21E51800F20BD7 /* DigitalOutputContext.cpp */; };
@@ -73,6 +76,7 @@
 			dstPath = "";
 			dstSubfolderSpec = 10;
 			files = (
+				8A2460D21D187AB30001B40B /* libswresample.dylib in Copy FFmpeg libs */,
 				8A65D6B81C26CE540071EBBE /* libavcodec.dylib in Copy FFmpeg libs */,
 				8A65D6B91C26CE540071EBBE /* libavformat.dylib in Copy FFmpeg libs */,
 				8A65D6BA1C26CE540071EBBE /* libavutil.dylib in Copy FFmpeg libs */,
@@ -98,6 +102,7 @@
 		8A7C0D111C1DCDCF006EC2C6 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		8A7C0D151C1DD24A006EC2C6 /* LoopbackAudio.c */ = {isa = PBXFileReference; fileEncoding = 4; indentWidth = 4; lastKnownFileType = sourcecode.c.c; path = LoopbackAudio.c; sourceTree = "<group>"; tabWidth = 4; usesTabs = 1; };
 		8A7C0D171C1DD691006EC2C6 /* Localizable.strings */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; path = Localizable.strings; sourceTree = "<group>"; };
+		8A8578AC1D1867A000CC5C3B /* libswresample.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libswresample.dylib; path = lib/libswresample.dylib; sourceTree = FFMPEG_HOME; };
 		8A8D38EC1C1DE3A500B9A127 /* TPCircularBuffer.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = TPCircularBuffer.c; path = thirdparty/TPCircularBuffer/TPCircularBuffer.c; sourceTree = "<group>"; };
 		8A8D38ED1C1DE3A500B9A127 /* TPCircularBuffer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = TPCircularBuffer.h; path = thirdparty/TPCircularBuffer/TPCircularBuffer.h; sourceTree = "<group>"; };
 		8A9757021C204EAA00F20BD7 /* SPDIFAudioEncoder.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = SPDIFAudioEncoder.cpp; sourceTree = "<group>"; };
@@ -125,6 +130,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				8A8578AD1D1867A000CC5C3B /* libswresample.dylib in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -134,6 +140,7 @@
 			files = (
 				8A65D6AC1C26C1790071EBBE /* libavcodec.dylib in Frameworks */,
 				8A65D6AD1C26C1790071EBBE /* libavformat.dylib in Frameworks */,
+				8A2460D11D1868330001B40B /* libswresample.dylib in Frameworks */,
 				8A65D6AE1C26C1790071EBBE /* libavutil.dylib in Frameworks */,
 				8ADF7AA11C1F118400C4F936 /* CoreAudio.framework in Frameworks */,
 			);
@@ -154,6 +161,7 @@
 		8A65D6B21C26C2630071EBBE /* FFmpeg */ = {
 			isa = PBXGroup;
 			children = (
+				8A8578AC1D1867A000CC5C3B /* libswresample.dylib */,
 				8A65D6A91C26C1790071EBBE /* libavcodec.dylib */,
 				8A65D6AA1C26C1790071EBBE /* libavformat.dylib */,
 				8A65D6AB1C26C1790071EBBE /* libavutil.dylib */,
@@ -291,7 +299,7 @@
 		8A7C0D041C1DB801006EC2C6 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
-				LastUpgradeCheck = 0720;
+				LastUpgradeCheck = 0730;
 				ORGANIZATIONNAME = "[maven] heavy industries";
 				TargetAttributes = {
 					8A4638971C2C1AE200F94631 = {
@@ -450,6 +458,8 @@
 		8A7C0D081C1DB801006EC2C6 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ENABLE_TESTABILITY = YES;
+				ONLY_ACTIVE_ARCH = YES;
 			};
 			name = Debug;
 		};

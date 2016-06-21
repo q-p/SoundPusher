@@ -9,6 +9,8 @@
 #include <cstdarg>
 #include <cstdio>
 
+#include <unistd.h>
+
 #include "MiniLogger.hpp"
 
 MiniLogger DefaultLogger;

@@ -38,8 +38,8 @@ struct DigitalOutputContext
   const AudioStreamBasicDescription &GetInputFormat() const { return _encoder.GetInFormat(); }
   /// @return the number of channels in (and thus required for) a compressed packet.
   uint32_t GetNumInputChannels() const { return GetInputFormat().mChannelsPerFrame; }
-  /// @return the number of audio frames in (and thus required for) a compressed packet.
-  uint32_t GetNumFramesPerPacket() const { return _encoder.GetNumFramesPerPacket(); }
+  /// @return the number of audio frames in (and thus required for) a compressed packet, which may be different to the frames the encoder wants.
+  uint32_t GetNumFramesPerPacket() const { return _format.mFramesPerPacket; }
 
   /// Appends the given interleaved input frames to the internal buffer.
   /**
@@ -55,7 +55,7 @@ struct DigitalOutputContext
   }
 
   /// Enables/disables upmixing from stereo if available.
-  void SetUpmix(const bool enabled);
+  void SetUpmix(const bool enabled) { _shouldUpmix.store(enabled, std::memory_order_relaxed); }
 
   /// Starts IO for the device.
   void Start();
@@ -72,12 +72,6 @@ struct DigitalOutputContext
   const AudioChannelLayoutTag _channelLayoutTag;
 
 protected:
-  /// Function for deinterleaving from interleaved to planar storage.
-  typedef void (*DeinterleaveFunc)(const uint32_t num, const float *__restrict in, uint32_t outStrideFloat, float *__restrict out);
-
-  /// @return DeinterleaveFunc to use for the given arguments.
-  static DeinterleaveFunc GetDeinterleaveFunc(const uint32_t numChannels, const bool enableUpmix);
-
   /// @return the over-estimated portion of how much of the output IOCycle we need to to fill the output buffer.
   double MeasureSafeIOCycleUsage();
 
@@ -86,17 +80,14 @@ protected:
     const AudioBufferList* inInputData, const AudioTimeStamp* inInputTime, AudioBufferList* outOutputData,
     const AudioTimeStamp* inOutputTime, void* inClientData);
 
+  /// The logger for the IOProc (which is called from a different (real-time) thread).
+  MiniLogger _log;
+
   /// The encoder for our output packets (not used by us except for EncodeAndAppendPacket()).
   SPDIFAudioEncoder _encoder;
 
   /// Buffer for interleaved input frames.
   TPCircularBuffer _inputBuffer;
-  /// Deinterleaver from input buffer into the input-pointers.
-  std::atomic<DeinterleaveFunc> _deinterleaver;
-  /// These point into the correct offsets into _planarFrames, which holds the actual storage.
-  std::vector<const float *> _planarInputPointers;
-  /// Backing storage for all planes.
-  std::vector<float> _planarFrames;
 
   /// Counter for the approximate number of output cycles, used to monitor minimum available frames over a number of cycles.
   uint32_t _cycleCounter;
@@ -107,10 +98,11 @@ protected:
    */
   uint32_t _minBufferedFramesAtOutputTime;
 
-  /// The logger for the IOProc (which is called from a different (real-time) thread).
-  MiniLogger _log;
   /// IOProc handle.
   AudioDeviceIOProcID _deviceIOProcID;
+
+  /// Should we upmix?
+  std::atomic_bool _shouldUpmix;
 
   /// Is our IOProc started?
   bool _isRunning;
