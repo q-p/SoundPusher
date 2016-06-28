@@ -74,6 +74,8 @@ protected:
 
   /// Deleter for memory allocated with av_malloc().
   struct AVDeleter { void operator()(void *p) const { av_free(p); } };
+  /// Deleter for an AVCodecContext.
+  struct AVCodecContextDeleter { void operator()(AVCodecContext *p) const { avcodec_free_context(&p); } };
   /// Deleter for an AVFormatContext with a custom IOContext.
   struct AVFormatContextDeleter { void operator()(AVFormatContext *p) const { av_free(p->pb); avformat_free_context(p); } };
   /// Deleter for an AVFrame (allocated with av_frame_alloc()).
@@ -86,8 +88,10 @@ protected:
   /// The output format to the encoder (i.e. what it produces).
   AudioStreamBasicDescription _outFormat;
 
-  /// The muxer context (which also includes the encoder).
+  /// The muxer context.
   std::unique_ptr<AVFormatContext, AVFormatContextDeleter> _muxer;
+  /// The codec context.
+  std::unique_ptr<AVCodecContext, AVCodecContextDeleter> _codecContext;
   /// The input audio frame (containing multiple frames (samples) in CoreAudio terms), memory owned by _avBuffer.
   std::unique_ptr<AVFrame, AVFrameDeleter> _frame;
   /// The buffer for the packet to encode the input frame into, memory owned by _avBuffer;

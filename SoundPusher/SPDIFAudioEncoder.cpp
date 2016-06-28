@@ -197,15 +197,15 @@ SPDIFAudioEncoder::SPDIFAudioEncoder(const AudioStreamBasicDescription &inFormat
   assert(inFormat.mChannelsPerFrame == AudioChannelLayoutTag_GetNumberOfChannels(channelLayoutTag));
   static_assert(std::is_same<float, SampleT>::value, "Unexpected sample type");
 
-  AVStream *stream = avformat_new_stream(_muxer.get(), avcodec_find_encoder(codecID));
-  assert(stream && stream->codec);
-
-  AVCodecContext *coder = stream->codec;
+  _codecContext.reset(avcodec_alloc_context3(avcodec_find_encoder(codecID)));
+  if (!_codecContext)
+    throw std::runtime_error("Could not allocate AVCodecContext");
+  auto *coder = _codecContext.get();
   auto spdifPayloadFactor = static_cast<double>((MaxBytesPerPacket - 4 * _outFormat.mBitsPerChannel / 8)) / MaxBytesPerPacket;
   if (codecID == AV_CODEC_ID_DTS)
   {
     coder->strict_std_compliance = -2;
-    spdifPayloadFactor = 1.0;
+//    spdifPayloadFactor = 1.0;
   }
   const auto outputBitsPerSec = _outFormat.mSampleRate * _outFormat.mChannelsPerFrame * _outFormat.mBitsPerChannel;
   coder->bit_rate = std::floor(outputBitsPerSec * spdifPayloadFactor);
@@ -215,17 +215,26 @@ SPDIFAudioEncoder::SPDIFAudioEncoder(const AudioStreamBasicDescription &inFormat
   coder->channels = AudioChannelLayoutTag_GetNumberOfChannels(channelLayoutTag);
   coder->time_base = (AVRational){1, coder->sample_rate};
 
-  stream->time_base = coder->time_base;
-
   AVDictionary *opts = nullptr;
   status = avcodec_open2(coder, coder->codec, &opts);
   av_dict_free(&opts);
   if (status < 0)
     throw LibAVException(status);
+
+  AVStream *stream = avformat_new_stream(_muxer.get(), nullptr);
+  if (!stream)
+    throw std::runtime_error("Could not allocate AVStream");
+  stream->id = 0;
+  stream->time_base = coder->time_base;
+  status = avcodec_parameters_from_context(stream->codecpar, coder);
+  if (status < 0)
+    throw LibAVException(status);
+
   _numFramesPerPacket = coder->frame_size;
 
   _frame.reset(av_frame_alloc());
-  assert(_frame);
+  if (!_frame)
+    throw std::runtime_error("Could not allocate AVFrame");
   _frame->format = coder->sample_fmt;
   _frame->channel_layout = coder->channel_layout;
   _frame->sample_rate = coder->sample_rate;
@@ -276,8 +285,6 @@ SPDIFAudioEncoder::SPDIFAudioEncoder(const AudioStreamBasicDescription &inFormat
 SPDIFAudioEncoder::~SPDIFAudioEncoder()
 {
   av_write_trailer(_muxer.get());
-  if (_muxer)
-    avcodec_close(_muxer->streams[0]->codec);
 }
 
 
@@ -302,7 +309,6 @@ uint32_t SPDIFAudioEncoder::EncodePacket(const uint32_t numFrames, const SampleT
 {
   if (numFrames != _numFramesPerPacket)
     throw std::invalid_argument("Incorrect number of frames for encoding");
-  AVCodecContext *coder = _muxer->streams[0]->codec;
 
   int status = 0;
   // convert to coder input format
@@ -314,13 +320,16 @@ uint32_t SPDIFAudioEncoder::EncodePacket(const uint32_t numFrames, const SampleT
   _packet.data = _packetBuffer;
   _packet.size = MaxBytesPerPacket;
 
-  int got_packet = 0;
-  status = avcodec_encode_audio2(coder, &_packet, _frame.get(), &got_packet);
-
+  status = avcodec_send_frame(_codecContext.get(), _frame.get());
+  if (status < 0)
+    throw LibAVException(status);
+  status = avcodec_receive_packet(_codecContext.get(), &_packet);
+  if (status == AVERROR(EAGAIN))
+    return 0; // no packet data
   if (status < 0)
     throw LibAVException(status);
 
-  if (!got_packet)
+  if (_packet.size <= 0)
     return 0;
 
   _writePacketBuf = outBuffer;
