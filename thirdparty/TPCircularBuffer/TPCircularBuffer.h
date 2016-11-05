@@ -42,9 +42,18 @@
 #ifndef TPCircularBuffer_h
 #define TPCircularBuffer_h
 
-#include <libkern/OSAtomic.h>
+#include <stdbool.h>
 #include <string.h>
 #include <assert.h>
+
+#ifdef __cplusplus
+    extern "C++" {
+        #include <atomic>
+        using namespace std;
+    }
+#else
+    #include <stdatomic.h>
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -55,7 +64,7 @@ typedef struct {
     int32_t           length;
     int32_t           tail;
     int32_t           head;
-    volatile int32_t  fillCount;
+    volatile atomic_int fillCount;
     bool              atomic;
 } TPCircularBuffer;
 
@@ -65,6 +74,13 @@ typedef struct {
  *  Note that the length is advisory only: Because of the way the
  *  memory mirroring technique works, the true buffer length will
  *  be multiples of the device page size (e.g. 4096 bytes)
+ *
+ *  If you intend to use the AudioBufferList utilities, you should
+ *  always allocate a bit more space than you need for pure audio
+ *  data, so there's room for the metadata. How much extra is required
+ *  depends on how many AudioBufferList structures are used, which is
+ *  a function of how many audio frames each buffer holds. A good rule
+ *  of thumb is to add 15%, or at least another 2048 bytes or so.
  *
  * @param buffer Circular buffer
  * @param length Length of buffer
@@ -135,7 +151,7 @@ static __inline__ __attribute__((always_inline)) void* TPCircularBufferTail(TPCi
 static __inline__ __attribute__((always_inline)) void TPCircularBufferConsume(TPCircularBuffer *buffer, int32_t amount) {
     buffer->tail = (buffer->tail + amount) % buffer->length;
     if ( buffer->atomic ) {
-        OSAtomicAdd32Barrier(-amount, &buffer->fillCount);
+        atomic_fetch_add(&buffer->fillCount, -amount);
     } else {
         buffer->fillCount -= amount;
     }
@@ -171,7 +187,7 @@ static __inline__ __attribute__((always_inline)) void* TPCircularBufferHead(TPCi
 static __inline__ __attribute__((always_inline)) void TPCircularBufferProduce(TPCircularBuffer *buffer, int32_t amount) {
     buffer->head = (buffer->head + amount) % buffer->length;
     if ( buffer->atomic ) {
-        OSAtomicAdd32Barrier(amount, &buffer->fillCount);
+        atomic_fetch_add(&buffer->fillCount, amount);
     } else {
         buffer->fillCount += amount;
     }
