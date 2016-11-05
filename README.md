@@ -22,15 +22,15 @@ Please report any issues on [GitHub](https://github.com/q-p/SoundPusher).
 Here's a script that builds a cut-down version of [FFmpeg](http://www.ffmpeg.org) that includes all that's required for SoundPusher:
 ```sh
 #!/bin/sh
-./configure --prefix=$FFMPEG_HOME --cc=clang --disable-static --enable-shared --extra-ldlibflags=-Wl,-unexported_symbol,"_ff*" --disable-all --disable-doc --disable-everything --disable-pthreads --disable-iconv --disable-securetransport --disable-audiotoolbox --disable-videotoolbox --enable-avutil --enable-swresample --enable-avcodec --enable-avformat --enable-encoder=ac3 --enable-muxer=spdif
+./configure --prefix=$FFMPEG_HOME --cc=clang --disable-static --enable-shared --disable-all --disable-doc --disable-everything --disable-pthreads --disable-iconv --disable-securetransport --disable-audiotoolbox --disable-videotoolbox --disable-vda --enable-avutil --enable-swresample --enable-avcodec --enable-avformat --enable-encoder=ac3 --enable-muxer=spdif
 make -j8
 make install
 # update shared library install names
 cd $FFMPEG_HOME/lib
-AVUTIL_ID=`otool -XD libavutil.dylib`
-AVCODEC_ID=`otool -XD libavcodec.dylib`
-AVFORMAT_ID=`otool -XD libavformat.dylib`
-SWRESAMPLE_ID=`otool -XD libswresample.dylib`
+AVUTIL_ID=`otool -D libavutil.dylib | tail -1`
+AVCODEC_ID=`otool -D libavcodec.dylib | tail -1`
+AVFORMAT_ID=`otool -D libavformat.dylib | tail -1`
+SWRESAMPLE_ID=`otool -D libswresample.dylib | tail -1`
 for lib in libavutil libavcodec libavformat libswresample
 do
     install_name_tool -id @rpath/$lib.dylib -change $AVUTIL_ID @rpath/libavutil.dylib -change $AVCODEC_ID @rpath/libavcodec.dylib -change $AVFORMAT_ID @rpath/libavformat.dylib -change $SWRESAMPLE_ID @rpath/libswresample.dylib $lib.dylib
