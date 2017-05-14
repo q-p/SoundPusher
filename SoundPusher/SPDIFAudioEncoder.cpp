@@ -89,16 +89,6 @@ static uint64_t AudioChannelLayoutTagToAVChannelLayout(AudioChannelLayoutTag cha
   return 0;
 }
 
-/**
- * Set a customized remix matrix.
- *
- * @param s       allocated Swr context, not yet initialized
- * @param matrix  remix coefficients; matrix[i + stride * o] is
- *                the weight of input channel i in output channel o
- * @param stride  offset between lines of the matrix
- * @return  >= 0 on success, or AVERROR error code in case of failure.
- */
-//int swr_set_matrix(struct SwrContext *s, const double *matrix, int stride);
 
 static std::vector<double> GetUpmixMatrix(AudioChannelLayoutTag channelLayoutTag, const std::vector<int> &input2LibAVChannel)
 {
@@ -186,14 +176,7 @@ SPDIFAudioEncoder::SPDIFAudioEncoder(const AudioStreamBasicDescription &inFormat
   _writePacketBuf(nullptr), _writePacketBufSize(0), _writePacketLogger(logger), _numFramesPerPacket(0)
 {
   int status = 0;
-  {
-    AVFormatContext *muxer = nullptr;
-    status = avformat_alloc_output_context2(&muxer, nullptr, "spdif", nullptr);
-    _muxer.reset(muxer);
-    if (status < 0)
-      throw LibAVException(status);
-  }
-  assert(std::strcmp(_muxer->oformat->name, "spdif") == 0);
+
   assert(inFormat.mChannelsPerFrame == AudioChannelLayoutTag_GetNumberOfChannels(channelLayoutTag));
   static_assert(std::is_same<float, SampleT>::value, "Unexpected sample type");
 
@@ -214,12 +197,22 @@ SPDIFAudioEncoder::SPDIFAudioEncoder(const AudioStreamBasicDescription &inFormat
   coder->channel_layout = AudioChannelLayoutTagToAVChannelLayout(channelLayoutTag, _input2LibAVChannel);
   coder->channels = AudioChannelLayoutTag_GetNumberOfChannels(channelLayoutTag);
   coder->time_base = (AVRational){1, coder->sample_rate};
+  coder->codec_type = AVMEDIA_TYPE_AUDIO;
 
   AVDictionary *opts = nullptr;
   status = avcodec_open2(coder, coder->codec, &opts);
   av_dict_free(&opts);
   if (status < 0)
     throw LibAVException(status);
+
+  {
+    AVFormatContext *muxer = nullptr;
+    status = avformat_alloc_output_context2(&muxer, nullptr, "spdif", nullptr);
+    _muxer.reset(muxer);
+    if (status < 0)
+      throw LibAVException(status);
+  }
+  assert(std::strcmp(_muxer->oformat->name, "spdif") == 0);
 
   AVStream *stream = avformat_new_stream(_muxer.get(), nullptr);
   if (!stream)
