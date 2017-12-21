@@ -18,11 +18,11 @@ Once the driver is installed and `SoundPusher` running, you should be able to se
 Please report any issues on [GitHub](https://github.com/q-p/SoundPusher).
 
 ## Dependencies
-### FFmpeg — libavcodec, libavformat
+### FFmpeg — libavcodec, libavformat, libswresample
 Here's a script that builds a cut-down version of [FFmpeg](http://www.ffmpeg.org) that includes all that's required for SoundPusher:
 ```sh
 #!/bin/sh
-./configure --prefix=$FFMPEG_HOME --cc=clang --disable-static --enable-shared --disable-all --disable-doc --disable-everything --disable-pthreads --disable-iconv --disable-securetransport --disable-audiotoolbox --disable-videotoolbox --disable-vda --enable-avutil --enable-swresample --enable-avcodec --enable-avformat --enable-encoder=ac3 --enable-muxer=spdif
+./configure --prefix=$FFMPEG_HOME --cc=clang --disable-static --enable-shared --disable-all --disable-doc --disable-everything --disable-xlib --disable-pthreads --disable-iconv --disable-securetransport --disable-audiotoolbox --disable-videotoolbox --disable-appkit --disable-avfoundation --disable-coreimage --disable-bzlib --disable-zlib --enable-avutil --enable-avcodec --enable-avformat --enable-swresample --enable-encoder=ac3 --enable-muxer=spdif
 make -j8
 make install
 # update shared library install names
