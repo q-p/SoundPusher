@@ -13,10 +13,10 @@
 #include <atomic>
 #include <cstdint>
 
+#include <os/log.h>
 #include "CoreAudio/CoreAudio.h"
 #include "TPCircularBuffer.h"
 
-#include "MiniLogger.hpp"
 #include "CoreAudioHelper.hpp"
 #include "SPDIFAudioEncoder.hpp"
 
@@ -81,7 +81,7 @@ protected:
     const AudioTimeStamp* inOutputTime, void* inClientData);
 
   /// The logger for the IOProc (which is called from a different (real-time) thread).
-  MiniLogger _log;
+  os_log_t _log;
 
   /// The encoder for our output packets (not used by us except for EncodeAndAppendPacket()).
   SPDIFAudioEncoder _encoder;

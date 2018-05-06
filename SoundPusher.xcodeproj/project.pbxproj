@@ -35,7 +35,6 @@
 		8A65D6B91C26CE540071EBBE /* libavformat.dylib in Copy FFmpeg libs */ = {isa = PBXBuildFile; fileRef = 8A65D6AA1C26C1790071EBBE /* libavformat.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		8A65D6BA1C26CE540071EBBE /* libavutil.dylib in Copy FFmpeg libs */ = {isa = PBXBuildFile; fileRef = 8A65D6AB1C26C1790071EBBE /* libavutil.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		8A65D6BD1C26F50E0071EBBE /* ForwardingChainIdentifier.m in Sources */ = {isa = PBXBuildFile; fileRef = 8A65D6BC1C26F50E0071EBBE /* ForwardingChainIdentifier.m */; };
-		8A6E3B391C2ABE2600E0918D /* MiniLogger.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 8A6E3B371C2ABE2600E0918D /* MiniLogger.cpp */; };
 		8A7C0D161C1DD24A006EC2C6 /* LoopbackAudio.c in Sources */ = {isa = PBXBuildFile; fileRef = 8A7C0D151C1DD24A006EC2C6 /* LoopbackAudio.c */; };
 		8A7C0D181C1DD691006EC2C6 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 8A7C0D171C1DD691006EC2C6 /* Localizable.strings */; };
 		8A8D38EE1C1DE3A500B9A127 /* TPCircularBuffer.c in Sources */ = {isa = PBXBuildFile; fileRef = 8A8D38EC1C1DE3A500B9A127 /* TPCircularBuffer.c */; };
@@ -95,8 +94,6 @@
 		8A65D6BB1C26F50E0071EBBE /* ForwardingChainIdentifier.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ForwardingChainIdentifier.h; sourceTree = "<group>"; };
 		8A65D6BC1C26F50E0071EBBE /* ForwardingChainIdentifier.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ForwardingChainIdentifier.m; sourceTree = "<group>"; };
 		8A6E3B161C29CB6E00E0918D /* SoundPusher.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = SoundPusher.entitlements; sourceTree = "<group>"; };
-		8A6E3B371C2ABE2600E0918D /* MiniLogger.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = MiniLogger.cpp; sourceTree = "<group>"; };
-		8A6E3B381C2ABE2600E0918D /* MiniLogger.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = MiniLogger.hpp; sourceTree = "<group>"; };
 		8A7C0D0E1C1DCDCF006EC2C6 /* LoopbackAudio.driver */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LoopbackAudio.driver; sourceTree = BUILT_PRODUCTS_DIR; };
 		8A7C0D111C1DCDCF006EC2C6 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		8A7C0D151C1DD24A006EC2C6 /* LoopbackAudio.c */ = {isa = PBXFileReference; fileEncoding = 4; indentWidth = 4; lastKnownFileType = sourcecode.c.c; path = LoopbackAudio.c; sourceTree = "<group>"; tabWidth = 4; usesTabs = 1; };
@@ -223,8 +220,6 @@
 			children = (
 				8A65D6BB1C26F50E0071EBBE /* ForwardingChainIdentifier.h */,
 				8A65D6BC1C26F50E0071EBBE /* ForwardingChainIdentifier.m */,
-				8A6E3B371C2ABE2600E0918D /* MiniLogger.cpp */,
-				8A6E3B381C2ABE2600E0918D /* MiniLogger.hpp */,
 				8ADF7A891C1EFE9400C4F936 /* AppDelegate.h */,
 				8ADF7A8A1C1EFE9400C4F936 /* AppDelegate.mm */,
 				8ADF7AA21C1F2D1500C4F936 /* CoreAudioHelper.cpp */,
@@ -297,7 +292,7 @@
 		8A7C0D041C1DB801006EC2C6 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
-				LastUpgradeCheck = 0920;
+				LastUpgradeCheck = 0930;
 				ORGANIZATIONNAME = "[maven] heavy industries";
 				TargetAttributes = {
 					8A4638971C2C1AE200F94631 = {
@@ -403,7 +398,6 @@
 				8A9757041C204EAA00F20BD7 /* SPDIFAudioEncoder.cpp in Sources */,
 				8A97570B1C220EDD00F20BD7 /* ForwardingInputTap.cpp in Sources */,
 				8ADF7A8B1C1EFE9400C4F936 /* AppDelegate.mm in Sources */,
-				8A6E3B391C2ABE2600E0918D /* MiniLogger.cpp in Sources */,
 				8A65D6BD1C26F50E0071EBBE /* ForwardingChainIdentifier.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -446,6 +440,7 @@
 		8A4638991C2C1AE200F94631 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = YES;
 				PRODUCT_NAME = Installer;
 			};
 			name = Debug;
@@ -453,6 +448,7 @@
 		8A46389A1C2C1AE200F94631 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = YES;
 				PRODUCT_NAME = Installer;
 			};
 			name = Release;
@@ -464,11 +460,13 @@
 				CLANG_WARN_BOOL_CONVERSION = YES;
 				CLANG_WARN_COMMA = YES;
 				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
 				CLANG_WARN_EMPTY_BODY = YES;
 				CLANG_WARN_ENUM_CONVERSION = YES;
 				CLANG_WARN_INFINITE_RECURSION = YES;
 				CLANG_WARN_INT_CONVERSION = YES;
 				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
 				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
 				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
 				CLANG_WARN_STRICT_PROTOTYPES = YES;
@@ -484,7 +482,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 10.10;
+				MACOSX_DEPLOYMENT_TARGET = 10.12;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = macosx;
 			};
@@ -497,11 +495,13 @@
 				CLANG_WARN_BOOL_CONVERSION = YES;
 				CLANG_WARN_COMMA = YES;
 				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
 				CLANG_WARN_EMPTY_BODY = YES;
 				CLANG_WARN_ENUM_CONVERSION = YES;
 				CLANG_WARN_INFINITE_RECURSION = YES;
 				CLANG_WARN_INT_CONVERSION = YES;
 				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
 				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
 				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
 				CLANG_WARN_STRICT_PROTOTYPES = YES;
@@ -516,7 +516,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 10.10;
+				MACOSX_DEPLOYMENT_TARGET = 10.12;
 				SDKROOT = macosx;
 			};
 			name = Release;

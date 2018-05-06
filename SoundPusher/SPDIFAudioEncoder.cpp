@@ -12,8 +12,9 @@
 #include <cmath>
 #include <type_traits>
 
+#include <os/log.h>
+
 #include "SPDIFAudioEncoder.hpp"
-#include "MiniLogger.hpp"
 
 //==================================================================================================
 #pragma mark Helpers
@@ -170,7 +171,7 @@ static std::vector<double> GetUpmixMatrix(AudioChannelLayoutTag channelLayoutTag
 //==================================================================================================
 
 SPDIFAudioEncoder::SPDIFAudioEncoder(const AudioStreamBasicDescription &inFormat,
-  const AudioChannelLayoutTag channelLayoutTag, const AudioStreamBasicDescription &outFormat, MiniLogger &logger,
+  const AudioChannelLayoutTag channelLayoutTag, const AudioStreamBasicDescription &outFormat, os_log_t logger,
   const AVCodecID codecID)
 : _inFormat(inFormat), _outFormat(outFormat), _packetBuffer(nullptr), _packet(),
   _writePacketBuf(nullptr), _writePacketBufSize(0), _writePacketLogger(logger), _numFramesPerPacket(0)
@@ -289,7 +290,7 @@ int SPDIFAudioEncoder::WritePacketFunc(void *opaque, uint8_t *buf, int buf_size)
   // buffer must've been set-up before
   assert(me->_writePacketBuf);
   if (buf_size > me->_writePacketBufSize)
-    me->_writePacketLogger.Info("Writing %i bytes for packet but only %u available", buf_size, me->_writePacketBufSize);
+    os_log_info(me->_writePacketLogger, "Writing %i bytes for packet but only %u available", buf_size, me->_writePacketBufSize);
   const auto num = std::min(static_cast<uint32_t>(buf_size), me->_writePacketBufSize);
   std::memcpy(me->_writePacketBuf, buf, num);
   // update to say how much we've written

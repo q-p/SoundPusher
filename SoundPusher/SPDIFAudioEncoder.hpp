@@ -25,8 +25,6 @@ extern "C" {
 
 struct LibAVException : std::runtime_error { LibAVException(const int error); };
 
-class MiniLogger;
-
 
 /// Takes an uncompressed, planar input format, and compresses that into the given output format with a codec.
 struct SPDIFAudioEncoder
@@ -42,7 +40,7 @@ struct SPDIFAudioEncoder
    * @param codecID The libavcodec codec to use for compression.
    */
   SPDIFAudioEncoder(const AudioStreamBasicDescription &inFormat, const AudioChannelLayoutTag channelLayoutTag,
-    const AudioStreamBasicDescription &outFormat, MiniLogger &logger, const AVCodecID codecID = AV_CODEC_ID_AC3);
+    const AudioStreamBasicDescription &outFormat, os_log_t logger, const AVCodecID codecID = AV_CODEC_ID_AC3);
 
   ~SPDIFAudioEncoder();
 
@@ -104,7 +102,7 @@ protected:
   /// Where WritePacketFunc() takes the output buffer size from.
   uint32_t _writePacketBufSize;
   /// The logger used (if required) when encoding a packet.
-  MiniLogger &_writePacketLogger;
+  os_log_t _writePacketLogger;
 
   /// The number of input frames required to produce an output packet.
   uint32_t _numFramesPerPacket;

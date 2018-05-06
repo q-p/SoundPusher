@@ -79,7 +79,7 @@ double DigitalOutputContext::MeasureSafeIOCycleUsage()
 DigitalOutputContext::DigitalOutputContext(AudioObjectID device, AudioObjectID stream,
   const AudioStreamBasicDescription &format, const AudioChannelLayoutTag channelLayoutTag)
 : _device(device), _stream(stream), _format(format), _channelLayoutTag(channelLayoutTag)
-, _log(DefaultLogger.GetLevel(), "SoundPusher.OutIOProc")
+, _log(os_log_create("de.maven.SoundPusher", "OutIOProc"))
 , _encoder(GetBestInputFormatForOutputFormat(_format, _channelLayoutTag), _channelLayoutTag, _format, _log)
 , _cycleCounter(0), _minBufferedFramesAtOutputTime(0), _deviceIOProcID(nullptr), _isRunning(false)
 , _hogger(_device, true), _originalFormat(_stream, format)
@@ -99,9 +99,9 @@ DigitalOutputContext::DigitalOutputContext(AudioObjectID device, AudioObjectID s
   UInt32 dataSize = sizeof cycleUsage;
   status = AudioObjectSetPropertyData(_device, &IOCycleUsageAddress, 0, NULL, dataSize, &cycleUsage);
   if (status != noErr)
-    _log.Notice("Could not set IOCycleUsage to %f", static_cast<double>(cycleUsage));
+    os_log(_log, "Could not set IOCycleUsage to %f", static_cast<double>(cycleUsage));
   else
-    _log.Info("Set estimated IOCycleUsage to %f", static_cast<double>(cycleUsage));
+    os_log_info(_log, "Set estimated IOCycleUsage to %f", static_cast<double>(cycleUsage));
 }
 
 DigitalOutputContext::~DigitalOutputContext()
@@ -110,6 +110,7 @@ DigitalOutputContext::~DigitalOutputContext()
     Stop();
   AudioDeviceDestroyIOProcID(_device, _deviceIOProcID);
   TPCircularBufferCleanup(&_inputBuffer);
+  os_release(_log);
 }
 
 
@@ -160,13 +161,13 @@ OSStatus DigitalOutputContext::DeviceIOProcFunc(AudioObjectID inDevice, const Au
       numExtraFramesToConsume = me->_minBufferedFramesAtOutputTime - numInputFramesRequired;
       inputBuffer += numExtraFramesToConsume * numInputChannels;
       availableInputFrames -= numExtraFramesToConsume;
-      me->_log.Info("Observed %u min buffered frames, reduced to %u", me->_minBufferedFramesAtOutputTime, numInputFramesRequired);
+      os_log_info(me->_log, "Observed %u min buffered frames, reduced to %u", me->_minBufferedFramesAtOutputTime, numInputFramesRequired);
     }
     me->_minBufferedFramesAtOutputTime = UINT32_MAX;
   }
 
   if (availableInputFrames < numInputFramesRequired)
-    me->_log.Notice("%u/%u available, min buffered frames is %u", availableInputFrames, numInputFramesRequired, me->_minBufferedFramesAtOutputTime);
+    os_log_info(me->_log, "%u/%u available, min buffered frames is %u", availableInputFrames, numInputFramesRequired, me->_minBufferedFramesAtOutputTime);
   const auto numPackedFrames = me->_encoder.GetNumFramesPerPacket();
   const auto shouldUpmix = me->_shouldUpmix.load(std::memory_order_relaxed);
   auto outputBuffer = static_cast<uint8_t *>(outOutputData->mBuffers[0].mData);

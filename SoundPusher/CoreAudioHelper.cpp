@@ -10,8 +10,9 @@
 #include <cctype>
 #include <memory>
 
+#include <os/log.h>
+
 #include "CoreAudioHelper.hpp"
-#include "MiniLogger.hpp"
 
 
 namespace CAHelper {
@@ -161,7 +162,7 @@ void SetStreamsEnabled(const AudioObjectID device, const AudioDeviceIOProcID IOP
 
   OSStatus status = AudioObjectSetPropertyData(device, &streamUsageAddress, 0, NULL, static_cast<UInt32>(size), usage);
   if (status != noErr)
-    DefaultLogger.Notice("SetStreamsEnabled(): Could set property: %s", Get4CCAsString(status).c_str());
+    os_log(OS_LOG_DEFAULT, "SetStreamsEnabled(): Could set property: %s", Get4CCAsString(status).c_str());
 }
 
 //==================================================================================================
@@ -185,7 +186,7 @@ DefaultDeviceChanger::DefaultDeviceChanger(const AudioObjectID claimedDevice, co
     status = AudioObjectSetPropertyData(kAudioObjectSystemObject, &DefaultDeviceAddress, 0, NULL, dataSize, &alternativeDevice);
     if (status != noErr)
     {
-      DefaultLogger.Notice("Could not change default device: %s", Get4CCAsString(status).c_str());
+      os_log(OS_LOG_DEFAULT, "Could not change default device: %s", Get4CCAsString(status).c_str());
       return;
     }
     _originalDevice = defaultDevice;
@@ -199,7 +200,7 @@ DefaultDeviceChanger::~DefaultDeviceChanger()
     UInt32 dataSize = sizeof _originalDevice;
     OSStatus status = AudioObjectSetPropertyData(kAudioObjectSystemObject, &DefaultDeviceAddress, 0, NULL, dataSize, &_originalDevice);
     if (status != noErr)
-      DefaultLogger.Notice("Could not restore default device: %s", Get4CCAsString(status).c_str());
+      os_log(OS_LOG_DEFAULT, "Could not restore default device: %s", Get4CCAsString(status).c_str());
   }
 }
 
@@ -248,7 +249,7 @@ DeviceHogger::~DeviceHogger()
   UInt32 dataSize = sizeof pid;
   status = AudioObjectSetPropertyData(_device, &DeviceHogModeAddress, 0, NULL, dataSize, &pid);
   if (status != noErr || pid != -1)
-    DefaultLogger.Notice("Could not release exclusive access to device %u", _device);
+    os_log(OS_LOG_DEFAULT, "Could not release exclusive access to device %u", _device);
 }
 
 //==================================================================================================
@@ -288,7 +289,7 @@ FormatSetter::~FormatSetter()
   status = AudioObjectSetPropertyData(_stream, &StreamPhysicalFormatAddress, 0, NULL, dataSize, &_originalFormat);
   if (status != noErr)
   {
-    DefaultLogger.Notice("Could not restore original format on stream %u %s", _stream, Get4CCAsString(status).c_str());
+    os_log(OS_LOG_DEFAULT, "Could not restore original format on stream %u %s", _stream, Get4CCAsString(status).c_str());
     return;
   }
 }

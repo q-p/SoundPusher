@@ -20,7 +20,7 @@
 #include <CoreAudio/AudioServerPlugIn.h>
 #include <mach/mach_time.h>
 #include <pthread.h>
-#include <libkern/OSAtomic.h>
+#include <os/lock.h>
 
 #include "LoopbackAudio.h"
 #include "TPCircularBuffer.h"
@@ -36,21 +36,21 @@
 //#define ALLOW_MULTIPLE_FORMATS
 
 #if DEBUG
-	#include <asl.h>
+	#include <os/log.h>
 
-	#define	DebugMsg(Level, inFormat, ...)	asl_log(NULL, NULL, Level, inFormat, ## __VA_ARGS__)
+	#define	DebugMsg(Type, inFormat, ...)	os_log_with_type(OS_LOG_DEFAULT, Type, inFormat, ## __VA_ARGS__)
 
 	#define	FailIf(inCondition, inHandler, inMessage)									\
 			if(inCondition)																\
 			{																			\
-				DebugMsg(ASL_LEVEL_WARNING, inMessage);									\
+				DebugMsg(OS_LOG_TYPE_ERROR, inMessage);									\
 				goto inHandler;															\
 			}
 
 	#define	FailWithAction(inCondition, inAction, inHandler, inMessage)					\
 			if(inCondition)																\
 			{																			\
-				DebugMsg(ASL_LEVEL_WARNING, inMessage);									\
+				DebugMsg(OS_LOG_TYPE_ERROR, inMessage);									\
 				{ inAction; }															\
 				goto inHandler;															\
 			}
@@ -136,7 +136,7 @@ typedef struct
 	// Used for longer locks
 	pthread_mutex_t				Mutex;
 	// Used for the IO operations (essentially the buffer) and GetZeroTimeStamp
-	volatile OSSpinLock			SpinLock;
+	os_unfair_lock				UnfairLock;
 
 	AudioChannelLayout			CurrentChannelLayout;
 	AudioStreamBasicDescription	CurrentFormat;
@@ -164,7 +164,7 @@ typedef struct
 
 static Device gDevice = {
 	.Mutex						= PTHREAD_MUTEX_INITIALIZER,
-	.SpinLock					= OS_SPINLOCK_INIT,
+	.UnfairLock					= OS_UNFAIR_LOCK_INIT,
 	.CurrentChannelLayout		= {
 		.mChannelLayoutTag			= kAudioChannelLayoutTag_AudioUnit_5_1,
 		.mChannelBitmap				= 0,
@@ -2787,7 +2787,7 @@ static OSStatus	LoopbackAudio_GetZeroTimeStamp(AudioServerPlugInDriverRef inDriv
 	FailWithAction(inDeviceObjectID != kObjectID_Device, theAnswer = kAudioHardwareBadObjectError, Done, "LoopbackAudio_GetZeroTimeStamp: bad device ID");
 
 	//	we need to hold the lock
-	OSSpinLockLock(&gDevice.SpinLock);
+	os_unfair_lock_lock(&gDevice.UnfairLock);
 
 	//	get the current host time
 	theCurrentHostTime = mach_absolute_time();
@@ -2809,7 +2809,7 @@ static OSStatus	LoopbackAudio_GetZeroTimeStamp(AudioServerPlugInDriverRef inDriv
 	*outSeed = gDevice.TimeLineSeed;
 
 	//	unlock the state lock
-	OSSpinLockUnlock(&gDevice.SpinLock);
+	os_unfair_lock_unlock(&gDevice.UnfairLock);
 
 Done:
 	return theAnswer;
@@ -2926,7 +2926,7 @@ static OSStatus	LoopbackAudio_DoIOOperation(AudioServerPlugInDriverRef inDriver,
 				const SInt64 newReadOffsetInFrames = ReadOffsetInFrames - (readEnd - lastWriteEndInFrames);
 				if (atomic_compare_exchange_weak_explicit(&gDevice.ReadOffsetInFrames, &ReadOffsetInFrames, newReadOffsetInFrames, memory_order_acq_rel, memory_order_acquire))
 				{
-					DebugMsg(ASL_LEVEL_INFO, "LoopbackAudio_ReadInput: adjusting read offset from %lld to %lld", oldReadOffsetInFrames, newReadOffsetInFrames);
+					DebugMsg(OS_LOG_TYPE_INFO, "LoopbackAudio_ReadInput: adjusting read offset from %lld to %lld", oldReadOffsetInFrames, newReadOffsetInFrames);
 					ReadOffsetInFrames = newReadOffsetInFrames;
 				}
 				// else ReadOffsetInFrames already contains updated value

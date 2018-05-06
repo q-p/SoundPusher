@@ -17,7 +17,7 @@
 ForwardingInputTap::ForwardingInputTap(AudioObjectID device, AudioObjectID stream,
   DigitalOutputContext &outContext)
 : _device(device), _stream(stream), _format(outContext.GetInputFormat()), _outContext(outContext)
-, _log(DefaultLogger.GetLevel(), "SoundPusher.InIOProc"), _deviceIOProcID(nullptr), _isRunning(false)
+, _log(os_log_create("de.maven.SoundPusher", "InIOProc")), _deviceIOProcID(nullptr), _isRunning(false)
 {
   OSStatus status = AudioDeviceCreateIOProcID(_device, DeviceIOProcFunc, this, &_deviceIOProcID);
   if (status != noErr)
@@ -29,9 +29,9 @@ ForwardingInputTap::ForwardingInputTap(AudioObjectID device, AudioObjectID strea
   UInt32 dataSize = sizeof desiredBufferFrameSize;
   status = AudioObjectSetPropertyData(_device, &BufferFrameSizeAddress, 0, NULL, dataSize, &desiredBufferFrameSize);
   if (status != noErr)
-    _log.Notice("Could not set buffer frame-size to %u", desiredBufferFrameSize);
+    os_log(_log, "Could not set buffer frame-size to %u", desiredBufferFrameSize);
   else
-    _log.Info("Set buffer frame-size to %u", desiredBufferFrameSize);
+    os_log_info(_log, "Set buffer frame-size to %u", desiredBufferFrameSize);
 }
 
 ForwardingInputTap::~ForwardingInputTap()
@@ -39,6 +39,7 @@ ForwardingInputTap::~ForwardingInputTap()
   if (_isRunning)
     Stop();
   AudioDeviceDestroyIOProcID(_device, _deviceIOProcID);
+  os_release(_log);
 }
 
 
