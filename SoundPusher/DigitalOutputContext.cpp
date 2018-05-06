@@ -7,6 +7,7 @@
 //
 
 #include <cassert>
+#include <random>
 #include <chrono>
 
 #include "TPCircularBuffer.h"
@@ -41,7 +42,16 @@ double DigitalOutputContext::MeasureSafeIOCycleUsage()
   assert(numFramesPerOutputPacket >= numFramesPerEncode && numFramesPerOutputPacket % numFramesPerEncode == 0);
   const auto numChannels = GetNumInputChannels();
   const auto secsPerPacket = numFramesPerOutputPacket / GetInputFormat().mSampleRate;
-  std::vector<float> input(numFramesPerOutputPacket * numChannels, 0.0f);
+
+  // generate some noise (so we get a worst-case measurement)
+  std::vector<float> input(numFramesPerOutputPacket * numChannels);
+  {
+    std::minstd_rand rng;
+    std::uniform_real_distribution<float> distribution(0.0f, 1.0f);
+    for (auto &v : input)
+      v = distribution(rng);
+  }
+
   std::vector<uint8_t> output(_encoder.MaxBytesPerPacket);
   double minUsage = 1.0 / SafetyFactor; // ensures result will at most be 1.0
 
