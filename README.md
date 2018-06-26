@@ -22,7 +22,7 @@ Please report any issues on [GitHub](https://github.com/q-p/SoundPusher).
 Here's a script that builds a cut-down version of [FFmpeg](http://www.ffmpeg.org) that includes all that's required for SoundPusher:
 ```sh
 #!/bin/sh
-./configure --prefix=$FFMPEG_HOME --cc=clang --disable-static --enable-shared --disable-all --disable-doc --disable-everything --disable-xlib --disable-pthreads --disable-iconv --disable-securetransport --disable-audiotoolbox --disable-videotoolbox --disable-appkit --disable-avfoundation --disable-coreimage --disable-bzlib --disable-zlib --enable-avutil --enable-avcodec --enable-avformat --enable-swresample --enable-encoder=ac3 --enable-muxer=spdif
+./configure --prefix=$FFMPEG_HOME --cc=clang --cc=clang --disable-static --enable-shared --disable-all --disable-autodetect --disable-programs --disable-doc --disable-everything --disable-pthreads --disable-network --disable-dct --disable-dwt --disable-lsp --disable-lzo --disable-rdft --disable-faan --disable-pixelutils --enable-avutil --enable-avcodec --enable-avformat --enable-swresample --enable-encoder=ac3 --enable-muxer=spdif
 make -j8
 make install
 # update shared library install names

@@ -144,6 +144,7 @@ OSStatus DigitalOutputContext::DeviceIOProcFunc(AudioObjectID inDevice, const Au
   assert(outOutputData->mNumberBuffers == 1);
 
   const auto numInputFramesRequired = me->GetNumFramesPerPacket(); // or derive from output buffer size
+  const auto numInputFramesDesired = numInputFramesRequired + me->_numSafeFrames;
   const auto numInputChannels = me->GetNumInputChannels();
   int32_t availableBytes = 0;
   auto inputBuffer = static_cast<const float *>(TPCircularBufferTail(&me->_inputBuffer, &availableBytes));
@@ -156,12 +157,12 @@ OSStatus DigitalOutputContext::DeviceIOProcFunc(AudioObjectID inDevice, const Au
   uint32_t numExtraFramesToConsume = 0;
   if (me->_cycleCounter++ % 64 == 0)
   {
-    if (me->_minBufferedFramesAtOutputTime > numInputFramesRequired)
+    if (me->_minBufferedFramesAtOutputTime > numInputFramesDesired)
     { // drop any excess input frames to reduce latency (and hope we don't need them later)
-      numExtraFramesToConsume = me->_minBufferedFramesAtOutputTime - numInputFramesRequired;
+      numExtraFramesToConsume = me->_minBufferedFramesAtOutputTime - numInputFramesDesired;
       inputBuffer += numExtraFramesToConsume * numInputChannels;
       availableInputFrames -= numExtraFramesToConsume;
-      os_log_info(me->_log, "Observed %u min buffered frames, reduced to %u", me->_minBufferedFramesAtOutputTime, numInputFramesRequired);
+      os_log_info(me->_log, "Observed %u min buffered frames, reduced to %u", me->_minBufferedFramesAtOutputTime, numInputFramesDesired);
     }
     me->_minBufferedFramesAtOutputTime = UINT32_MAX;
   }

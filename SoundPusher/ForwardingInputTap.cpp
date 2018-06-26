@@ -32,6 +32,8 @@ ForwardingInputTap::ForwardingInputTap(AudioObjectID device, AudioObjectID strea
     os_log(_log, "Could not set buffer frame-size to %u", desiredBufferFrameSize);
   else
     os_log_info(_log, "Set buffer frame-size to %u", desiredBufferFrameSize);
+
+  outContext.SetNumSafeFrames(desiredBufferFrameSize);
 }
 
 ForwardingInputTap::~ForwardingInputTap()

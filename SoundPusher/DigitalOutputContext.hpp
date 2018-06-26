@@ -34,6 +34,9 @@ struct DigitalOutputContext
 
   ~DigitalOutputContext();
 
+  /// Sets the number of excess frames to keep around as a buffer.
+  void SetNumSafeFrames(const uint32_t numFrames) { _numSafeFrames = numFrames; }
+
   /// @return the input format expected by AppendInputFrames().
   const AudioStreamBasicDescription &GetInputFormat() const { return _encoder.GetInFormat(); }
   /// @return the number of channels in (and thus required for) a compressed packet.
@@ -89,6 +92,8 @@ protected:
   /// Buffer for interleaved input frames.
   TPCircularBuffer _inputBuffer;
 
+  /// The amount of excess frames we want to keep to be sure we don't run out and have to continually readjust.
+  uint32_t _numSafeFrames;
   /// Counter for the approximate number of output cycles, used to monitor minimum available frames over a number of cycles.
   uint32_t _cycleCounter;
   /// The minimum number of buffered frames available at output time.

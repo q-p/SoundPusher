@@ -466,8 +466,6 @@ static void AttemptToStartMissingChains()
 #else
   av_log_set_level(AV_LOG_ERROR);
 #endif
-  avcodec_register_all();
-  av_register_all();
 
   {
     NSStatusBar *bar = [NSStatusBar systemStatusBar];
