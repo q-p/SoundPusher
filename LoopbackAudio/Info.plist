@@ -19,7 +19,7 @@
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>8</string>
+	<string>9</string>
 	<key>CFPlugInFactories</key>
 	<dict>
 		<key>E60A2918-B0D2-4B3D-9CD4-1697DE168E9E</key>
