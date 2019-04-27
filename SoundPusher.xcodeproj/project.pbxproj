@@ -292,11 +292,12 @@
 		8A7C0D041C1DB801006EC2C6 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
-				LastUpgradeCheck = 0930;
+				LastUpgradeCheck = 1000;
 				ORGANIZATIONNAME = "[maven] heavy industries";
 				TargetAttributes = {
 					8A4638971C2C1AE200F94631 = {
 						CreatedOnToolsVersion = 7.2;
+						DevelopmentTeam = 785W67QY73;
 					};
 					8A7C0D0D1C1DCDCF006EC2C6 = {
 						CreatedOnToolsVersion = 7.2;
@@ -317,7 +318,7 @@
 			};
 			buildConfigurationList = 8A7C0D071C1DB801006EC2C6 /* Build configuration list for PBXProject "SoundPusher" */;
 			compatibilityVersion = "Xcode 3.2";
-			developmentRegion = English;
+			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				en,
@@ -372,7 +373,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 1;
 			shellPath = /bin/sh;
-			shellScript = "DRIVER_PATH=\"/Library/Audio/Plug-Ins/HAL\"\nDRIVER_NAME=\"LoopbackAudio.driver\"\npkgbuild --component \"${INSTALL_ROOT}${DRIVER_PATH}/${DRIVER_NAME}\" --scripts \"./Package/Scripts-Driver\" --install-location \"${DRIVER_PATH}\" \"${TEMP_DIR}/de.maven.LoopbackAudio.pkg\"\nAPP_PATH=\"/Applications\"\nAPP_NAME=\"SoundPusher.app\"\nAPP_VERSION=`/usr/libexec/PlistBuddy -c \"Print :CFBundleVersion\" ${INSTALL_ROOT}${APP_PATH}/${APP_NAME}/Contents/Info.plist`\npkgbuild --component \"${INSTALL_ROOT}${APP_PATH}/${APP_NAME}\" --install-location \"${APP_PATH}\" \"${TEMP_DIR}/de.maven.SoundPusher.pkg\"\n\nproductbuild --distribution \"./Package/Distribution.xml\" --package-path \"${TEMP_DIR}\" --resources \"./Package/Resources\" --version \"${APP_VERSION}\" --sign \"Developer ID Installer\" \"${BUILT_PRODUCTS_DIR}/SoundPusher.pkg\"";
+			shellScript = "DRIVER_PATH=\"/Library/Audio/Plug-Ins/HAL\"\nDRIVER_NAME=\"LoopbackAudio.driver\"\npkgbuild --component \"${INSTALL_ROOT}${DRIVER_PATH}/${DRIVER_NAME}\" --scripts \"./Package/Scripts-Driver\" --install-location \"${DRIVER_PATH}\" \"${TEMP_DIR}/de.maven.LoopbackAudio.pkg\"\nAPP_PATH=\"/Applications\"\nAPP_NAME=\"SoundPusher.app\"\nAPP_VERSION=`/usr/libexec/PlistBuddy -c \"Print :CFBundleVersion\" ${INSTALL_ROOT}${APP_PATH}/${APP_NAME}/Contents/Info.plist`\npkgbuild --component \"${INSTALL_ROOT}${APP_PATH}/${APP_NAME}\" --install-location \"${APP_PATH}\" \"${TEMP_DIR}/de.maven.SoundPusher.pkg\"\n\nproductbuild --distribution \"./Package/Distribution.xml\" --package-path \"${TEMP_DIR}\" --resources \"./Package/Resources\" --version \"${APP_VERSION}\" --sign \"Developer ID Installer\" --timestamp \"${BUILT_PRODUCTS_DIR}/SoundPusher.pkg\"\n";
 			showEnvVarsInLog = 0;
 		};
 /* End PBXShellScriptBuildPhase section */
@@ -473,6 +474,7 @@
 				CLANG_WARN_SUSPICIOUS_MOVE = YES;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -484,6 +486,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 10.12;
 				ONLY_ACTIVE_ARCH = YES;
+				OTHER_CODE_SIGN_FLAGS = "--timestamp";
 				SDKROOT = macosx;
 			};
 			name = Debug;
@@ -508,6 +511,7 @@
 				CLANG_WARN_SUSPICIOUS_MOVE = YES;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -517,6 +521,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 10.12;
+				OTHER_CODE_SIGN_FLAGS = "--timestamp";
 				SDKROOT = macosx;
 			};
 			name = Release;
@@ -539,6 +544,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_IDENTITY = "Developer ID Application";
+				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
@@ -565,6 +571,7 @@
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = de.maven.LoopbackAudio;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				WRAPPER_EXTENSION = driver;
 			};
 			name = Debug;
@@ -587,6 +594,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_IDENTITY = "Developer ID Application";
+				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = 785W67QY73;
@@ -606,6 +614,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				PRODUCT_BUNDLE_IDENTIFIER = de.maven.LoopbackAudio;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				WRAPPER_EXTENSION = driver;
 			};
 			name = Release;
@@ -629,6 +638,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_ENTITLEMENTS = SoundPusher/SoundPusher.entitlements;
 				CODE_SIGN_IDENTITY = "Developer ID Application";
+				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
@@ -655,6 +665,7 @@
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = de.maven.SoundPusher;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				USER_HEADER_SEARCH_PATHS = $FFMPEG_HOME/include;
 			};
 			name = Debug;
@@ -678,6 +689,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_ENTITLEMENTS = SoundPusher/SoundPusher.entitlements;
 				CODE_SIGN_IDENTITY = "Developer ID Application";
+				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
 				COPY_PHASE_STRIP = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
@@ -698,6 +710,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				PRODUCT_BUNDLE_IDENTIFIER = de.maven.SoundPusher;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				USER_HEADER_SEARCH_PATHS = $FFMPEG_HOME/include;
 			};
 			name = Release;
