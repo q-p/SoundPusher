@@ -22,6 +22,7 @@ extern "C" {
 
 #import "ForwardingChainIdentifier.h"
 #import "AppDelegate.h"
+#import "AVFoundationHelper.h"
 
 @interface AppDelegate ()
 @property (weak) IBOutlet NSMenu *statusItemMenu;
@@ -161,6 +162,7 @@ struct ForwardingChain
   ForwardingInputTap _input;
 };
 
+
 // our status menu item
 NSStatusItem *_statusItem = nil;
 // the list of chains which we want to be active (but which may not be, e.g. due to disconnected devices etc).
@@ -170,6 +172,7 @@ std::vector<std::unique_ptr<ForwardingChain>> _chains;
 // how many menu items were in the menu originally (because we keep rebuilding parts of it)
 NSInteger _numOriginalMenuItems = 0;
 bool _enableUpmix = false;
+AIAuthorizationStatus _audioInputAuthorizationStatus = AIAuthorizationStatusNotDetermined;
 
 
 static void UpdateStatusItem()
@@ -221,6 +224,9 @@ static void AttemptToStartMissingChains()
   if (loopbackDevices.empty())
     return;
 
+  if (_audioInputAuthorizationStatus == AIAuthorizationStatusRestricted || _audioInputAuthorizationStatus == AIAuthorizationStatusDenied)
+    return;
+
   // which devices are currently available
   const auto outputDevices = GetDevicesWithDigitalOutput(allDevices);
   NSMutableSet<ForwardingChainIdentifier *> *desired = [NSMutableSet setWithCapacity:outputDevices.size()];
@@ -246,6 +252,25 @@ static void AttemptToStartMissingChains()
       return device.Contains(attempt);
     });
     assert(outDeviceIt != outputDevices.cend());
+
+    if (_audioInputAuthorizationStatus == AIAuthorizationStatusNotDetermined)
+    {
+      _audioInputAuthorizationStatus = DetermineAudioInputAuthorization(^(AIAuthorizationStatus status)
+      {
+        dispatch_async(dispatch_get_main_queue(), ^
+        {
+          if (_audioInputAuthorizationStatus != status)
+          {
+            _audioInputAuthorizationStatus = status;
+            _chains.clear();
+            AttemptToStartMissingChains();
+          }
+        });
+      });
+    }
+
+    if (_audioInputAuthorizationStatus != AIAuthorizationStatusAuthorized)
+      return; // will also fail for any other chain
 
     const auto &inDevice = loopbackDevices.front();
     const auto &outDevice = *outDeviceIt;
@@ -276,7 +301,7 @@ static void AttemptToStartMissingChains()
 {
   const bool chainsWereEmpty = _chains.empty();
   ForwardingChainIdentifier *identifier = item.representedObject;
-  if (item.state == NSOnState)
+  if (item.state == NSControlStateValueOn)
   { // should try to stop chain
     bool didFind = false;
     for (auto it = _chains.begin(); it != _chains.end(); /* in body */)
@@ -298,42 +323,9 @@ static void AttemptToStartMissingChains()
   }
   else
   { // try to add the chain
-    const auto allDevices = CAHelper::GetDevices();
-    const auto loopbackDevices = GetLoopbackDevicesWithInput(allDevices);
-    if (loopbackDevices.empty())
-    {
-      os_log_error(OS_LOG_DEFAULT, "LoopbackAudio device is gone, cannot start chain");
-      return;
-    }
-    const auto outputDevices = GetDevicesWithDigitalOutput(allDevices);
-    for (const auto &outDevice : outputDevices)
-    {
-      if (!outDevice.Contains(identifier))
-        continue;
-
-      const auto &inDevice = loopbackDevices.front();
-      const auto &outStream = outDevice._streams[identifier.outStreamIndex];
-      try
-      { // create and start-up first
-        auto newChain = std::make_unique<ForwardingChain>(identifier, inDevice._device, inDevice._streams.front()._stream,
-          outDevice._device, outStream._stream, outStream._formats.front(), kAudioChannelLayoutTag_AudioUnit_5_1);
-
-        newChain->_output.SetUpmix(_enableUpmix);
-
-        newChain->_input.Start();
-        newChain->_output.Start();
-
-        // and only add if everything worked so far
-        _chains.emplace_back(std::move(newChain));
-        [_desiredActiveChains addObject:identifier];
-        [[NSUserDefaults standardUserDefaults] setObject:[_desiredActiveChains.allObjects valueForKey:@"asDictionary"] forKey:@"ActiveChains"];
-      }
-      catch (const std::exception &e)
-      {
-        os_log_error(OS_LOG_DEFAULT, "Could not initialize chain %s: %s", identifier.description.UTF8String, e.what());
-      }
-      break;
-    }
+    [_desiredActiveChains addObject:identifier];
+    [[NSUserDefaults standardUserDefaults] setObject:[_desiredActiveChains.allObjects valueForKey:@"asDictionary"] forKey:@"ActiveChains"];
+    AttemptToStartMissingChains();
   }
   if (_chains.empty() != chainsWereEmpty)
     UpdateStatusItem();
@@ -341,12 +333,12 @@ static void AttemptToStartMissingChains()
 
 - (IBAction)toggleUpmix:(NSMenuItem *)item
 {
-  const auto newState = (item.state == NSOnState) ? NSOffState : NSOnState;
+  const auto newState = (item.state == NSControlStateValueOn) ? NSControlStateValueOff : NSControlStateValueOn;
   item.state = newState;
-  if (_enableUpmix != (newState == NSOnState))
+  if (_enableUpmix != (newState == NSControlStateValueOn))
   {
-    _enableUpmix = (newState == NSOnState);
-    [[NSUserDefaults standardUserDefaults] setBool:_enableUpmix forKey:@"Upmix" ];
+    _enableUpmix = (newState == NSControlStateValueOn);
+    [[NSUserDefaults standardUserDefaults] setBool:_enableUpmix forKey:@"Upmix"];
 
     for (const auto &chain : _chains)
       chain->_output.SetUpmix(_enableUpmix);
@@ -363,12 +355,31 @@ static void AttemptToStartMissingChains()
 
   const auto allDevices = CAHelper::GetDevices();
 
+  const bool isAudioInputUnavailable = _audioInputAuthorizationStatus == AIAuthorizationStatusRestricted || _audioInputAuthorizationStatus == AIAuthorizationStatusDenied;
+
   NSUInteger insertionIndex = 0;
   const auto loopbackDevices = GetLoopbackDevicesWithInput(allDevices);
   if (loopbackDevices.empty())
   {
     NSMenuItem *item = [NSMenuItem new];
     item.title = @"No LoopbackAudio device";
+    item.enabled = NO;
+    [menu insertItem:item atIndex:insertionIndex];
+    ++insertionIndex;
+  }
+  else if (isAudioInputUnavailable)
+  {
+    NSMenuItem *item = [NSMenuItem new];
+    switch (_audioInputAuthorizationStatus)
+    {
+      case AIAuthorizationStatusRestricted:
+        item.title = @"Access to audio input is restricted";
+      break;
+      case AIAuthorizationStatusDenied:
+        item.title = @"Access to audio input denied";
+      break;
+      default: assert(false);
+    }
     item.enabled = NO;
     [menu insertItem:item atIndex:insertionIndex];
     ++insertionIndex;
@@ -393,13 +404,13 @@ static void AttemptToStartMissingChains()
       const AudioStreamBasicDescription &format = device._streams[i]._formats.front();
       NSMenuItem *item = [NSMenuItem new];
       item.title = deviceName;
-      item.enabled = !loopbackDevices.empty();
+      item.enabled = !loopbackDevices.empty() && !isAudioInputUnavailable; // either allowed or undetermined
       const auto chainIt = std::find_if(_chains.cbegin(), _chains.cend(), [identifier](const std::unique_ptr<ForwardingChain> &chain)
       {
         return [identifier isEqual:chain->_identifier];
       });
       const bool isActive = chainIt != _chains.cend();
-      item.state = isActive ? NSOnState : NSOffState;
+      item.state = isActive ? NSControlStateValueOn : NSControlStateValueOff;
       item.representedObject = identifier;
       item.action = @selector(toggleOutputDeviceAction:);
       item.target = self;
@@ -459,7 +470,7 @@ static void AttemptToStartMissingChains()
 
   _numOriginalMenuItems = self.statusItemMenu.numberOfItems; // so we know how many to keep when updating the menu
 
-  _upmixMenuItem.state = _enableUpmix ? NSOnState : NSOffState;
+  _upmixMenuItem.state = _enableUpmix ? NSControlStateValueOn : NSControlStateValueOff;
 
 #ifdef DEBUG
   av_log_set_level(AV_LOG_VERBOSE);
@@ -474,6 +485,8 @@ static void AttemptToStartMissingChains()
     _statusItem.button.appearsDisabled = YES;
     [_statusItem setMenu:self.statusItemMenu];
   }
+
+  _audioInputAuthorizationStatus = GetAudioInputAuthorizationStatus();
 
   AttemptToStartMissingChains();
 
