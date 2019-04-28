@@ -4,7 +4,7 @@
     <pkg-ref id="de.maven.SoundPusher"/>
     <title>SoundPusher</title>
     <options customize="never" require-scripts="false"/>
-    <os-version min="10.10.5"/>
+    <os-version min="10.14.0"/>
     <options rootVolumeOnly="true"/>
     <background alignment="bottomleft" file="speaker_512x512.png" uti="public.png"/>
     <choices-outline>
