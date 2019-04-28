@@ -33,8 +33,8 @@
 
 - (NSString *)description
 {
-  return [NSString stringWithFormat:@"<%@: %p; outDeviceUID = \"%@\"; outStreamIndex = %zu>", [self class], self,
-    _outDeviceUID, _outStreamIndex];
+  return [NSString stringWithFormat:@"<%@: %p; outDeviceUID = \"%@\"; outStreamIndex = %zu>", [self class],
+    (void *)self, _outDeviceUID, _outStreamIndex];
 }
 
 - (NSDictionary *)asDictionary

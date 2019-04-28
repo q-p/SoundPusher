@@ -197,7 +197,7 @@ SPDIFAudioEncoder::SPDIFAudioEncoder(const AudioStreamBasicDescription &inFormat
   coder->sample_rate = _inFormat.mSampleRate;
   coder->channel_layout = AudioChannelLayoutTagToAVChannelLayout(channelLayoutTag, _input2LibAVChannel);
   coder->channels = AudioChannelLayoutTag_GetNumberOfChannels(channelLayoutTag);
-  coder->time_base = (AVRational){1, coder->sample_rate};
+  coder->time_base = av_make_q(1, coder->sample_rate);
   coder->codec_type = AVMEDIA_TYPE_AUDIO;
 
   AVDictionary *opts = nullptr;

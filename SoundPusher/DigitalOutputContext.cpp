@@ -148,6 +148,9 @@ OSStatus DigitalOutputContext::DeviceIOProcFunc(AudioObjectID inDevice, const Au
   const auto numInputChannels = me->GetNumInputChannels();
   int32_t availableBytes = 0;
   auto inputBuffer = static_cast<const float *>(TPCircularBufferTail(&me->_inputBuffer, &availableBytes));
+  // if the buffer was completely empty, just take data from the start (which might still be silence)
+  if (!inputBuffer)
+    inputBuffer = static_cast<const float *>(me->_inputBuffer.buffer);
   uint32_t availableInputFrames = availableBytes / (numInputChannels * sizeof *inputBuffer);
 
   // update minimum available frames

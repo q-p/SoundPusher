@@ -2935,14 +2935,14 @@ static OSStatus	LoopbackAudio_DoIOOperation(AudioServerPlugInDriverRef inDriver,
 				readEnd = readBegin + inIOBufferFrameSize;
 			}
 
-			uint8_t *bufferBegin = gDevice.RingBuffer.buffer + (readBegin % numFramesInRingBuffer) * gDevice.CurrentFormat.mBytesPerFrame;
+			uint8_t *bufferBegin = (uint8_t *)gDevice.RingBuffer.buffer + (readBegin % numFramesInRingBuffer) * gDevice.CurrentFormat.mBytesPerFrame;
 			memcpy(ioMainBuffer, bufferBegin, inIOBufferFrameSize * gDevice.CurrentFormat.mBytesPerFrame);
 			break;
 		}
 		case kAudioServerPlugInIOOperationWriteMix:
 		{ // write input to our internal buffer: There can only be one writer thread
 			const SInt64 writeBegin = (SInt64)inIOCycleInfo->mOutputTime.mSampleTime;
-			uint8_t *bufferBegin = gDevice.RingBuffer.buffer + (writeBegin % numFramesInRingBuffer) * gDevice.CurrentFormat.mBytesPerFrame;
+			uint8_t *bufferBegin = (uint8_t *)gDevice.RingBuffer.buffer + (writeBegin % numFramesInRingBuffer) * gDevice.CurrentFormat.mBytesPerFrame;
 			memcpy(bufferBegin, ioMainBuffer, inIOBufferFrameSize * gDevice.CurrentFormat.mBytesPerFrame);
 			atomic_store_explicit(&gDevice.LastWriteEndInFrames, writeBegin + inIOBufferFrameSize, memory_order_release);
 			break;
