@@ -14,7 +14,7 @@ extern "C" {
 } // end extern "C"
 
 extern "C" {
-#include "LoopbackAudio.h"
+#include "SoundPusherAudio.h"
 } // end extern "C"
 #include "CoreAudioHelper.hpp"
 #include "DigitalOutputContext.hpp"
@@ -105,7 +105,7 @@ static std::vector<Device> GetLoopbackDevicesWithInput(const std::vector<AudioOb
   for (const auto device : allDevices)
   {
     NSString *uidString = CFBridgingRelease(CAHelper::GetStringProperty(device, CAHelper::DeviceUIDAddress));
-    if (![uidString isEqualToString:[NSString stringWithUTF8String:kLoopbackAudioDevice_UID]])
+    if (![uidString isEqualToString:[NSString stringWithUTF8String:kDevice_UID]])
       continue;
 
     const auto streams = CAHelper::GetStreams(device, true /* inputs */);
@@ -310,7 +310,7 @@ static void AttemptToStartMissingChains()
       if ([chain->_identifier isEqual:identifier])
       {
         didFind = true;
-        it =_chains.erase(it);
+        it = _chains.erase(it);
       }
       else
         ++it;
@@ -362,7 +362,7 @@ static void AttemptToStartMissingChains()
   if (loopbackDevices.empty())
   {
     NSMenuItem *item = [NSMenuItem new];
-    item.title = @"No LoopbackAudio device";
+    item.title = @"No SoundPusherAudio device";
     item.enabled = NO;
     [menu insertItem:item atIndex:insertionIndex];
     ++insertionIndex;

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8" standalone="no"?>
 <installer-gui-script minSpecVersion="1">
-    <pkg-ref id="de.maven.LoopbackAudio"/>
+    <pkg-ref id="de.maven.SoundPusherAudio"/>
     <pkg-ref id="de.maven.SoundPusher"/>
     <title>SoundPusher</title>
     <options customize="never" require-scripts="false"/>
@@ -9,15 +9,15 @@
     <background alignment="bottomleft" file="speaker_512x512.png" uti="public.png"/>
     <choices-outline>
         <line choice="default">
-            <line choice="de.maven.LoopbackAudio"/>
+            <line choice="de.maven.SoundPusherAudio"/>
             <line choice="de.maven.SoundPusher"/>
         </line>
     </choices-outline>
     <choice id="default"/>
-    <choice id="de.maven.LoopbackAudio" visible="false">
-        <pkg-ref id="de.maven.LoopbackAudio"/>
+    <choice id="de.maven.SoundPusherAudio" visible="false">
+        <pkg-ref id="de.maven.SoundPusherAudio"/>
     </choice>
-    <pkg-ref id="de.maven.LoopbackAudio" version="1.0.0" onConclusion="none">de.maven.LoopbackAudio.pkg</pkg-ref>
+    <pkg-ref id="de.maven.SoundPusherAudio" version="1.0.0" onConclusion="none">de.maven.SoundPusherAudio.pkg</pkg-ref>
     <choice id="de.maven.SoundPusher" visible="false">
         <pkg-ref id="de.maven.SoundPusher"/>
     </choice>

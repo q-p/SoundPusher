@@ -15,15 +15,15 @@
 	<key>CFBundlePackageType</key>
 	<string>BNDL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0.6</string>
+	<string>1.0.7</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>10</string>
+	<string>11</string>
 	<key>CFPlugInFactories</key>
 	<dict>
 		<key>E60A2918-B0D2-4B3D-9CD4-1697DE168E9E</key>
-		<string>LoopbackAudio_Create</string>
+		<string>SoundPusherAudio_Create</string>
 	</dict>
 	<key>CFPlugInTypes</key>
 	<dict>

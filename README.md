@@ -9,10 +9,10 @@ The application has been developed on OS X 10.11 "El Capitan", but *should* work
 ## Usage
 There are two components required to make this work:
 
-1. `LoopbackAudio` — A user-space CoreAudio driver (aka `AudioServerPlugin`) that provides a 5.1 output stream whose contents are mirrored ("looped back") to its own input stream. This allows applications to process the audio output of the system (if it is sent to the `LoopbackAudio` device). `LoopbackAudio.driver` must be installed (copied) into the `/Library/Audio/Plug-Ins/HAL` directory.
-2. `SoundPusher` — An application that continuously reads audio from the `LoopbackAudio` device, encodes it into a compressed format, and then sends that compressed stream to a (hopefully) real sound device's digital output stream. This is controlled through its menu bar extra.
+1. `SoundPusherAudio` — A user-space CoreAudio driver (aka `AudioServerPlugin`) that provides a 5.1 output stream whose contents are mirrored ("looped back") to its own input stream. This allows applications to process the audio output of the system (if it is sent to the `SoundPusher Audio` device). `SoundPusherAudio.driver` must be installed (copied) into the `/Library/Audio/Plug-Ins/HAL` directory. This driver was previously called `Loopback Audio` and you may have to remove the old version (called `LoopbackAudio.driver`) manually.
+2. `SoundPusher` — An application that continuously reads audio from the `SoundPusher Audio` device, encodes it into a compressed format, and then sends that compressed stream to a (hopefully) real sound device's digital output stream. This is controlled through its menu bar extra.
 
-Once the driver is installed and `SoundPusher` running, you should be able to select supported digital output devices which will forward any sound output sent to the `Loopback Audio` device to the designated digital output. `SoundPusher` will set the default output device to `Loopback Audio` if it was previously set to the device used for digital output.
+Once the driver is installed and `SoundPusher` running, you should be able to select supported digital output devices which will forward any sound output sent to the `SoundPusher Audio` device to the designated digital output. `SoundPusher` will set the default output device to `SoundPusher Audio` if it was previously set to the device used for digital output.
 
 ## Contact & Support
 Please report any issues on [GitHub](https://github.com/q-p/SoundPusher).
@@ -39,6 +39,6 @@ done
 
 ## Acknowledgements
 This software is built on the experience of others:
-- `LoopbackAudio` is based on the `NullAudio` user-space driver provided by Apple as example code.
+- `SoundPusherAudio` (formerly known as `LoopbackAudio`) is based on the `NullAudio` user-space driver provided by Apple as example code.
 - [TPCircularBuffer](https://github.com/michaeltyson/TPCircularBuffer/) by Michael Tyson is used to move audio and packet data around.
 - [FFmpeg](http://www.ffmpeg.org) is used to encode to compressed formats and then mux those packets into an `SPDIF` compliant bit-stream.

@@ -17,11 +17,11 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.2.3</string>
+	<string>1.2.4</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>12</string>
+	<string>13</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.utilities</string>
 	<key>LSBackgroundOnly</key>
@@ -33,7 +33,7 @@
 	<key>NSMainNibFile</key>
 	<string>MainMenu</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Audio input (which counts as microphone access) from the Loopback Audio device is the source of the encoded audio; no other audio devices are used as input.</string>
+	<string>Audio input (which counts as microphone access) from the SoundPusher Audio device is the source of the encoded audio; no other audio devices are used as input.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 </dict>

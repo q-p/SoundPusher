@@ -6,5 +6,5 @@
 
 */
 
-DeviceName = "Loopback Audio";
+DeviceName = "SoundPusher Audio";
 ManufacturerName = "[maven] heavy industries";
