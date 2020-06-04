@@ -25,7 +25,7 @@ CFStringRef GetStringProperty(const AudioObjectID device, const AudioObjectPrope
 extern const AudioObjectPropertyAddress DeviceUIDAddress;
 extern const AudioObjectPropertyAddress ObjectNameAddress;
 
-std::vector<AudioStreamBasicDescription> GetStreamPhysicalFormats(const AudioObjectID stream);
+std::vector<AudioStreamBasicDescription> GetStreamPhysicalFormats(const AudioObjectID stream, const Float64 desiredSampleRate = kAudioStreamAnyRate);
 std::vector<AudioObjectID> GetStreams(const AudioObjectID device, const bool input);
 std::vector<AudioObjectID> GetDevices();
 void SetStreamsEnabled(const AudioObjectID device, const AudioDeviceIOProcID IOProcID, const bool input, const bool enabled);

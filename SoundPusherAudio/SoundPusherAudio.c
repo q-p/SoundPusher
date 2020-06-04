@@ -2175,8 +2175,8 @@ static OSStatus	SoundPusherAudio_GetStreamPropertyData(AudioServerPlugInDriverRe
 			//	such as a speaker or headphones, or a microphone. Values for this property
 			//	are defined in <CoreAudio/AudioHardwareBase.h>
 			FailWithAction(inDataSize < sizeof(UInt32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "SoundPusherAudio_GetStreamPropertyData: not enough space for the return value of kAudioStreamPropertyTerminalType for the stream");
-//			*((UInt32*)outData) = (inObjectID == kObjectID_Stream_Input) ? kAudioStreamTerminalTypeMicrophone : kAudioStreamTerminalTypeSpeaker;
-			*((UInt32*)outData) = (inObjectID == kObjectID_Stream_Input) ? kAudioStreamTerminalTypeDigitalAudioInterface : kAudioStreamTerminalTypeDigitalAudioInterface;
+//			*((UInt32*)outData) = kAudioStreamTerminalTypeDigitalAudioInterface;
+			*((UInt32*)outData) = kAudioStreamTerminalTypeLine;
 			*outDataSize = sizeof(UInt32);
 			break;
 
@@ -2234,6 +2234,7 @@ static OSStatus	SoundPusherAudio_GetStreamPropertyData(AudioServerPlugInDriverRe
 				const unsigned sampleRateIndex = i % kNumSupportedSampleRates;
 				AudioStreamRangedDescription *outDesc = (AudioStreamRangedDescription *)outData + i;
 				
+				outDesc->mFormat.mSampleRate = kSupportedSampleRates[sampleRateIndex];
 				outDesc->mFormat.mFormatID = kAudioFormatLinearPCM;
 				outDesc->mFormat.mFormatFlags = kAudioFormatFlagsNativeFloatPacked;
 				outDesc->mFormat.mBitsPerChannel = sizeof(float) * 8;

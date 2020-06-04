@@ -57,7 +57,7 @@ CFStringRef GetStringProperty(const AudioObjectID device, const AudioObjectPrope
 #pragma mark Device queries
 //==================================================================================================
 
-std::vector<AudioStreamBasicDescription> GetStreamPhysicalFormats(const AudioObjectID stream)
+std::vector<AudioStreamBasicDescription> GetStreamPhysicalFormats(const AudioObjectID stream, const Float64 desiredSampleRate)
 {
   UInt32 dataSize = 0;
   OSStatus status = noErr;
@@ -81,9 +81,17 @@ std::vector<AudioStreamBasicDescription> GetStreamPhysicalFormats(const AudioObj
 
   // throw away ranges
   std::vector<AudioStreamBasicDescription> formats;
-  formats.reserve(rangedFormats.size());
   for (const auto &rf : rangedFormats)
+  {
+    // only keep if desiredSampleRate is in range
+    if (desiredSampleRate != kAudioStreamAnyRate &&
+      (rf.mSampleRateRange.mMinimum > desiredSampleRate || rf.mSampleRateRange.mMaximum < desiredSampleRate))
+      continue;
     formats.push_back(rf.mFormat);
+    if (desiredSampleRate != kAudioStreamAnyRate && rf.mFormat.mSampleRate != desiredSampleRate)
+      formats.back().mSampleRate = desiredSampleRate; // then fix it (as we dropped the ranges)
+  }
+  formats.shrink_to_fit();
 
   return formats;
 }

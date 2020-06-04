@@ -52,13 +52,16 @@ struct Device
   , _streams(std::move(streams))
   { }
 
-  bool Contains(ForwardingChainIdentifier *identifier) const
+  bool Contains(const bool asInput, ForwardingChainIdentifier *identifier) const
   {
-    if (![_uid isEqualToString:identifier.outDeviceUID])
+    NSString *uid = asInput ? identifier.inDeviceUID : identifier.outDeviceUID;
+    NSUInteger streamIndex = asInput ? identifier.inStreamIndex : identifier.outStreamIndex;
+
+    if (![_uid isEqualToString:uid])
       return false;
-    if (identifier.outStreamIndex >= _streams.size())
+    if (streamIndex >= _streams.size())
     {
-      os_log_error(OS_LOG_DEFAULT, "Device %s has %zu streams, but checked one is %zu", _uid.UTF8String, _streams.size(), identifier.outStreamIndex);
+      os_log_error(OS_LOG_DEFAULT, "Device %s has %zu streams, but checked one is %zu", _uid.UTF8String, _streams.size(), streamIndex);
       return false;
     }
     return true;
@@ -78,12 +81,11 @@ static std::vector<Device> GetDevicesWithDigitalOutput(const std::vector<AudioOb
     std::vector<Stream> digitalStreams;
     for (const auto stream : streams)
     {
-      const auto formats = CAHelper::GetStreamPhysicalFormats(stream);
+      const auto formats = CAHelper::GetStreamPhysicalFormats(stream, 48000.0);
       auto digitalFormats = decltype(formats){};
       std::copy_if(formats.begin(), formats.end(), std::back_inserter(digitalFormats), [](const AudioStreamBasicDescription &format)
       {
-        if (format.mSampleRate != 48000.0)
-          return false;
+        assert(format.mSampleRate == 48000.0);
         return format.mFormatID == kAudioFormatAC3 ||
                format.mFormatID == kAudioFormat60958AC3 ||
                format.mFormatID == 'IAC3' ||
@@ -99,22 +101,28 @@ static std::vector<Device> GetDevicesWithDigitalOutput(const std::vector<AudioOb
   return result;
 }
 
-static std::vector<Device> GetLoopbackDevicesWithInput(const std::vector<AudioObjectID> &allDevices)
+static std::vector<Device> GetDevicesWithMatchingInput(const std::vector<AudioObjectID> &allDevices)
 {
   std::vector<Device> result;
   for (const auto device : allDevices)
   {
-    NSString *uidString = CFBridgingRelease(CAHelper::GetStringProperty(device, CAHelper::DeviceUIDAddress));
-    if (![uidString isEqualToString:[NSString stringWithUTF8String:kDevice_UID]])
-      continue;
+//    NSString *uidString = CFBridgingRelease(CAHelper::GetStringProperty(device, CAHelper::DeviceUIDAddress));
+//    if (![uidString isEqualToString:[NSString stringWithUTF8String:kDevice_UID]])
+//      continue;
 
     const auto streams = CAHelper::GetStreams(device, true /* inputs */);
     std::vector<Stream> matchingStreams;
     for (const auto stream : streams)
     {
-      auto formats = CAHelper::GetStreamPhysicalFormats(stream);
-      if (!formats.empty())
-        matchingStreams.emplace_back(Stream{stream, std::move(formats)});
+      const auto formats = CAHelper::GetStreamPhysicalFormats(stream, 48000.0);
+      auto acceptedInputFormats = decltype(formats){};
+      std::copy_if(formats.begin(), formats.end(), std::back_inserter(acceptedInputFormats),
+        [](const AudioStreamBasicDescription &format)
+      {
+        return format.mFormatID == kAudioFormatLinearPCM && format.mFramesPerPacket == 1 && format.mChannelsPerFrame == 6 && format.mFormatFlags == kAudioFormatFlagsNativeFloatPacked;
+      });
+      if (!acceptedInputFormats.empty())
+        matchingStreams.emplace_back(Stream{stream, std::move(acceptedInputFormats)});
     }
     if (!matchingStreams.empty())
       result.emplace_back(Device{device, std::move(matchingStreams)});
@@ -220,20 +228,33 @@ static OSStatus DeviceAliveListenerFunc(AudioObjectID inObjectID, UInt32 inNumbe
 static void AttemptToStartMissingChains()
 {
   const auto allDevices = CAHelper::GetDevices();
-  const auto loopbackDevices = GetLoopbackDevicesWithInput(allDevices);
-  if (loopbackDevices.empty())
+  const auto inputDevices = GetDevicesWithMatchingInput(allDevices);
+  if (inputDevices.empty())
     return;
 
   if (_audioInputAuthorizationStatus == AIAuthorizationStatusRestricted || _audioInputAuthorizationStatus == AIAuthorizationStatusDenied)
     return;
 
-  // which devices are currently available
   const auto outputDevices = GetDevicesWithDigitalOutput(allDevices);
-  NSMutableSet<ForwardingChainIdentifier *> *desired = [NSMutableSet setWithCapacity:outputDevices.size()];
-  for (const auto &outDevice : outputDevices)
+  if (outputDevices.empty())
+    return;
+
+  NSMutableSet<NSString *> *inputDeviceUIDs = [NSMutableSet setWithCapacity:inputDevices.size()];
+  for (const auto &device : inputDevices)
+    [inputDeviceUIDs addObject:device._uid];
+  NSMutableSet<NSString *> *outputDeviceUIDs = [NSMutableSet setWithCapacity:outputDevices.size()];
+  for (const auto &device : outputDevices)
+    [outputDeviceUIDs addObject:device._uid];
+
+
+  NSMutableSet<ForwardingChainIdentifier *> *desired = [NSMutableSet set];
+  for (ForwardingChainIdentifier *desiredChain in _desiredActiveChains)
   {
-      for (auto i = NSUInteger{0}; i < outDevice._streams.size(); ++i)
-        [desired addObject:[[ForwardingChainIdentifier alloc] initWithOutDeviceUID:outDevice._uid andOutStreamIndex:i]];
+    if (![inputDeviceUIDs containsObject:desiredChain.inDeviceUID])
+      continue;
+    if (![outputDeviceUIDs containsObject:desiredChain.outDeviceUID])
+      continue;
+    [desired addObject:desiredChain];
   }
 
   // which devices are currently running
@@ -241,15 +262,20 @@ static void AttemptToStartMissingChains()
   for (const auto &chain : _chains)
     [running addObject:chain->_identifier];
 
-  [desired intersectSet:_desiredActiveChains];
   [desired minusSet:running];
 
   for (ForwardingChainIdentifier *attempt in desired)
   {
-    // find the device in the actual device list
+    // find the devices in the actual device list
+    const auto inDeviceIt = std::find_if(inputDevices.cbegin(), inputDevices.cend(), [attempt](const Device &device)
+    {
+      return device.Contains(/*asInput=*/true, attempt);
+    });
+    assert(inDeviceIt != inputDevices.cend());
+
     const auto outDeviceIt = std::find_if(outputDevices.cbegin(), outputDevices.cend(), [attempt](const Device &device)
     {
-      return device.Contains(attempt);
+      return device.Contains(/*asInput=*/false, attempt);
     });
     assert(outDeviceIt != outputDevices.cend());
 
@@ -272,12 +298,13 @@ static void AttemptToStartMissingChains()
     if (_audioInputAuthorizationStatus != AIAuthorizationStatusAuthorized)
       return; // will also fail for any other chain
 
-    const auto &inDevice = loopbackDevices.front();
+    const auto &inDevice = *inDeviceIt;
+    const auto &inStream = inDevice._streams[attempt.inStreamIndex];
     const auto &outDevice = *outDeviceIt;
     const auto &outStream = outDevice._streams[attempt.outStreamIndex];
     try
     { // create and start-up first
-      auto newChain = std::make_unique<ForwardingChain>(attempt, inDevice._device, inDevice._streams.front()._stream,
+      auto newChain = std::make_unique<ForwardingChain>(attempt, inDevice._device, inStream._stream,
         outDevice._device, outStream._stream, outStream._formats.front(), kAudioChannelLayoutTag_AudioUnit_5_1);
 
       newChain->_output.SetUpmix(_enableUpmix);
@@ -323,6 +350,18 @@ static void AttemptToStartMissingChains()
   }
   else
   { // try to add the chain
+    // need to first stop & remove all chains that use the same output device
+    for (auto it = _chains.begin(); it != _chains.end(); /* in body */)
+    {
+      const auto &chain = *it;
+      if ([chain->_identifier.outDeviceUID isEqual:identifier.outDeviceUID])
+        it = _chains.erase(it);
+      else
+        ++it;
+    }
+    // also remove from desired active
+    [_desiredActiveChains filterUsingPredicate:[NSPredicate predicateWithFormat:@"outDeviceUID != %@", identifier.outDeviceUID]];
+
     [_desiredActiveChains addObject:identifier];
     [[NSUserDefaults standardUserDefaults] setObject:[_desiredActiveChains.allObjects valueForKey:@"asDictionary"] forKey:@"ActiveChains"];
     AttemptToStartMissingChains();
@@ -358,11 +397,11 @@ static void AttemptToStartMissingChains()
   const bool isAudioInputUnavailable = _audioInputAuthorizationStatus == AIAuthorizationStatusRestricted || _audioInputAuthorizationStatus == AIAuthorizationStatusDenied;
 
   NSUInteger insertionIndex = 0;
-  const auto loopbackDevices = GetLoopbackDevicesWithInput(allDevices);
-  if (loopbackDevices.empty())
+  const auto inputDevices = GetDevicesWithMatchingInput(allDevices);
+  if (inputDevices.empty())
   {
     NSMenuItem *item = [NSMenuItem new];
-    item.title = @"No SoundPusherAudio device";
+    item.title = @"No (suitable) input device";
     item.enabled = NO;
     [menu insertItem:item atIndex:insertionIndex];
     ++insertionIndex;
@@ -394,35 +433,48 @@ static void AttemptToStartMissingChains()
     [menu insertItem:item atIndex:insertionIndex];
     ++insertionIndex;
   }
-  for (const auto &device : outputDevices)
-  {
-    NSString *deviceName = CFBridgingRelease(CAHelper::GetStringProperty(device._device, CAHelper::ObjectNameAddress));
 
-    for (auto i = NSUInteger{0}; i < device._streams.size(); ++i)
+  for (const auto &inDevice : inputDevices)
+  {
+    NSString *inDeviceName = CFBridgingRelease(CAHelper::GetStringProperty(inDevice._device, CAHelper::ObjectNameAddress));
+
+    for (auto inStreamIdx = NSUInteger{0}; inStreamIdx < inDevice._streams.size(); ++inStreamIdx)
     {
-      ForwardingChainIdentifier *identifier = [[ForwardingChainIdentifier alloc] initWithOutDeviceUID:device._uid andOutStreamIndex:i];
-      const AudioStreamBasicDescription &format = device._streams[i]._formats.front();
-      NSMenuItem *item = [NSMenuItem new];
-      item.title = deviceName;
-      item.enabled = !loopbackDevices.empty() && !isAudioInputUnavailable; // either allowed or undetermined
-      const auto chainIt = std::find_if(_chains.cbegin(), _chains.cend(), [identifier](const std::unique_ptr<ForwardingChain> &chain)
+      for (const auto &outDevice : outputDevices)
       {
-        return [identifier isEqual:chain->_identifier];
-      });
-      const bool isActive = chainIt != _chains.cend();
-      item.state = isActive ? NSControlStateValueOn : NSControlStateValueOff;
-      item.representedObject = identifier;
-      item.action = @selector(toggleOutputDeviceAction:);
-      item.target = self;
-      [menu insertItem:item atIndex:insertionIndex];
-      ++insertionIndex;
-      if (showDebugInfo)
-      {
-        NSMenuItem *item = [NSMenuItem new];
-        item.title = [NSString stringWithFormat:@"%.0fHz %u bytes/packet %u frames/packet [%s]", format.mSampleRate, format.mBytesPerPacket, format.mFramesPerPacket, CAHelper::Get4CCAsString(format.mFormatID).c_str()];
-        item.enabled = NO;
-        [menu insertItem:item atIndex:insertionIndex];
-        ++insertionIndex;
+        NSString *outDeviceName = CFBridgingRelease(CAHelper::GetStringProperty(outDevice._device, CAHelper::ObjectNameAddress));
+
+        for (auto outStreamIdx = NSUInteger{0}; outStreamIdx < outDevice._streams.size(); ++outStreamIdx)
+        {
+          ForwardingChainIdentifier *identifier = [[ForwardingChainIdentifier alloc] initWithInDeviceUID:inDevice._uid andInStreamIndex:inStreamIdx andOutDeviceUID:outDevice._uid andOutStreamIndex:outStreamIdx];
+          const AudioStreamBasicDescription &outFormat = outDevice._streams[outStreamIdx]._formats.front();
+          NSMenuItem *item = [NSMenuItem new];
+          if (inDevice._streams.size() > 1 || outDevice._streams.size() > 1)
+            item.title = [NSString stringWithFormat:@"%@ (%lu) → %@ (%lu)", inDeviceName, inStreamIdx, outDeviceName, outStreamIdx];
+          else
+            item.title = [NSString stringWithFormat:@"%@ → %@", inDeviceName, outDeviceName];
+
+          item.enabled = !inputDevices.empty() && !isAudioInputUnavailable; // either allowed or undetermined
+          const auto chainIt = std::find_if(_chains.cbegin(), _chains.cend(), [identifier](const std::unique_ptr<ForwardingChain> &chain)
+          {
+            return [identifier isEqual:chain->_identifier];
+          });
+          const bool isActive = chainIt != _chains.cend();
+          item.state = isActive ? NSControlStateValueOn : NSControlStateValueOff;
+          item.representedObject = identifier;
+          item.action = @selector(toggleOutputDeviceAction:);
+          item.target = self;
+          [menu insertItem:item atIndex:insertionIndex];
+          ++insertionIndex;
+          if (showDebugInfo)
+          {
+            NSMenuItem *item = [NSMenuItem new];
+            item.title = [NSString stringWithFormat:@"%.0fHz %u bytes/packet %u frames/packet [%s]", outFormat.mSampleRate, outFormat.mBytesPerPacket, outFormat.mFramesPerPacket, CAHelper::Get4CCAsString(outFormat.mFormatID).c_str()];
+            item.enabled = NO;
+            [menu insertItem:item atIndex:insertionIndex];
+            ++insertionIndex;
+          }
+        }
       }
     }
   }
