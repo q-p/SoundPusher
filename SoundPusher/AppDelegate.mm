@@ -140,9 +140,9 @@ struct ForwardingChain
 {
   ForwardingChain(ForwardingChainIdentifier *identifier, AudioObjectID inDevice, AudioObjectID inStream,
     AudioObjectID outDevice, AudioObjectID outStream, const AudioStreamBasicDescription &outFormat,
-    const AudioChannelLayoutTag channelLayoutTag)
+    const AudioChannelLayoutTag channelLayoutTag, CAHelper::DefaultDeviceChanger *oldDefaultDevice = nullptr)
   : _identifier(identifier)
-  , _defaultDevice(outDevice, inDevice)
+  , _defaultDevice(outDevice, inDevice, oldDefaultDevice)
   , _output(outDevice, outStream, outFormat, channelLayoutTag)
   , _input(inDevice, inStream, _output)
   {
@@ -225,7 +225,7 @@ static OSStatus DeviceAliveListenerFunc(AudioObjectID inObjectID, UInt32 inNumbe
 }
 
 
-static void AttemptToStartMissingChains()
+static void AttemptToStartMissingChains(CAHelper::DefaultDeviceChanger *defaultDevice = nullptr)
 {
   const auto allDevices = CAHelper::GetDevices();
   const auto inputDevices = GetDevicesWithMatchingInput(allDevices);
@@ -305,7 +305,8 @@ static void AttemptToStartMissingChains()
     try
     { // create and start-up first
       auto newChain = std::make_unique<ForwardingChain>(attempt, inDevice._device, inStream._stream,
-        outDevice._device, outStream._stream, outStream._formats.front(), kAudioChannelLayoutTag_AudioUnit_5_1);
+        outDevice._device, outStream._stream, outStream._formats.front(), kAudioChannelLayoutTag_AudioUnit_5_1,
+        defaultDevice);
 
       newChain->_output.SetUpmix(_enableUpmix);
 
@@ -352,11 +353,16 @@ static void AttemptToStartMissingChains()
   else
   { // try to add the chain
     // need to first stop & remove all chains that use the same output device
+    CAHelper::DefaultDeviceChanger defaultDevice;
     for (auto it = _chains.begin(); it != _chains.end(); /* in body */)
     {
       const auto &chain = *it;
       if ([chain->_identifier.outDeviceUID isEqual:identifier.outDeviceUID])
+      {
+        if (!defaultDevice.HasDevice() && (*it)->_defaultDevice.HasDevice())
+          defaultDevice = std::move((*it)->_defaultDevice); // transfer the default device
         it = _chains.erase(it);
+      }
       else
         ++it;
     }
@@ -365,7 +371,7 @@ static void AttemptToStartMissingChains()
 
     [_desiredActiveChains addObject:identifier];
     [[NSUserDefaults standardUserDefaults] setObject:[_desiredActiveChains.allObjects valueForKey:@"asDictionary"] forKey:@"ActiveChains"];
-    AttemptToStartMissingChains();
+    AttemptToStartMissingChains(defaultDevice.HasDevice() ? &defaultDevice : nullptr);
   }
 }
 
@@ -547,12 +553,23 @@ static void AttemptToStartMissingChains()
     name:NSWorkspaceDidWakeNotification object:NULL];
 }
 
+- (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication *)sender
+{
+  // we always want to quit *BUT* we need any events posted by deleting the chains (such as restoring the default
+  // device) to finish processing
+
+  // delete the chains (this posts some events)
+  _chains.clear();
+  // now we add an event *after* those that actually quits after the events have been processed
+  dispatch_async(dispatch_get_main_queue(), ^{
+    [[NSApplication sharedApplication] replyToApplicationShouldTerminate:YES];
+  });
+  return NSTerminateLater;
+}
+
 - (void)applicationWillTerminate:(NSNotification *)aNotification
 {
   [[[NSWorkspace sharedWorkspace] notificationCenter] removeObserver:self];
-
-  _chains.clear();
-
   [_statusItem.statusBar removeStatusItem:_statusItem];
 }
 

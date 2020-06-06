@@ -33,9 +33,12 @@ void SetStreamsEnabled(const AudioObjectID device, const AudioDeviceIOProcID IOP
 /// RAII class for changing the system default device
 struct DefaultDeviceChanger
 {
-  DefaultDeviceChanger(const AudioObjectID claimedDevice, const AudioObjectID alternativeDevice);
-  DefaultDeviceChanger(DefaultDeviceChanger &&) = delete; // non-copyable, non-movable
+  DefaultDeviceChanger();
+  DefaultDeviceChanger(const AudioObjectID claimedDevice, const AudioObjectID alternativeDevice,
+    DefaultDeviceChanger *oldDefaultDevice = nullptr);
+  DefaultDeviceChanger &operator=(DefaultDeviceChanger &&other);
   ~DefaultDeviceChanger();
+  bool HasDevice() const { return _originalDevice != -1; }
 protected:
   AudioObjectID _originalDevice;
 };
