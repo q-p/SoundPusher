@@ -170,7 +170,7 @@ void SetStreamsEnabled(const AudioObjectID device, const AudioDeviceIOProcID IOP
 
   OSStatus status = AudioObjectSetPropertyData(device, &streamUsageAddress, 0, NULL, static_cast<UInt32>(size), usage);
   if (status != noErr)
-    os_log(OS_LOG_DEFAULT, "SetStreamsEnabled(): Could set property: %s", Get4CCAsString(status).c_str());
+    os_log(OS_LOG_DEFAULT, "SetStreamsEnabled(): Could not set property: %s", Get4CCAsString(status).c_str());
 }
 
 //==================================================================================================

@@ -156,12 +156,13 @@ struct ForwardingChain
 
   ~ForwardingChain()
   {
-    OSStatus status = AudioObjectRemovePropertyListener(_output._device, &DeviceAliveAddress, DeviceAliveListenerFunc, this);
-    if (status != noErr)
-      os_log_error(OS_LOG_DEFAULT, "Could not remove alive-listener for output device %u", _output._device);
-    status = AudioObjectRemovePropertyListener(_input._device, &DeviceAliveAddress, DeviceAliveListenerFunc, this);
+    // reverse order of constructor
+    OSStatus status = AudioObjectRemovePropertyListener(_input._device, &DeviceAliveAddress, DeviceAliveListenerFunc, this);
     if (status != noErr)
       os_log_error(OS_LOG_DEFAULT, "Could not remove alive-listener for input device %u", _input._device);
+    status = AudioObjectRemovePropertyListener(_output._device, &DeviceAliveAddress, DeviceAliveListenerFunc, this);
+    if (status != noErr)
+      os_log_error(OS_LOG_DEFAULT, "Could not remove alive-listener for output device %u", _output._device);
   }
 
   ForwardingChainIdentifier *_identifier;
@@ -185,6 +186,9 @@ AIAuthorizationStatus _audioInputAuthorizationStatus = AIAuthorizationStatusNotD
 
 static void UpdateStatusItem()
 {
+  if (_chains.empty() == _statusItem.button.appearsDisabled)
+    return;
+
   if (_chains.empty())
   {
     _statusItem.button.image = [NSImage imageNamed:@"CableCutTemplate"];
@@ -200,7 +204,6 @@ static void UpdateStatusItem()
 static OSStatus DeviceAliveListenerFunc(AudioObjectID inObjectID, UInt32 inNumberAddresses,
   const AudioObjectPropertyAddress *inAddresses, void *inClientData)
 {
-  const bool chainsWereEmpty  = _chains.empty();
   ForwardingChain *oldChain = static_cast<ForwardingChain *>(inClientData);
   for (auto it = _chains.begin(); it != _chains.end(); /* in body */)
   {
@@ -214,12 +217,9 @@ static OSStatus DeviceAliveListenerFunc(AudioObjectID inObjectID, UInt32 inNumbe
       ++it;
   }
 
-  if (chainsWereEmpty != _chains.empty())
-  {
-    dispatch_async(dispatch_get_main_queue(), ^{
-      UpdateStatusItem();
-    });
-  }
+  dispatch_async(dispatch_get_main_queue(), ^{
+    UpdateStatusItem();
+  });
 
   return noErr;
 }
@@ -326,7 +326,6 @@ static void AttemptToStartMissingChains()
 
 - (void)toggleOutputDeviceAction:(NSMenuItem *)item
 {
-  const bool chainsWereEmpty = _chains.empty();
   ForwardingChainIdentifier *identifier = item.representedObject;
   if (item.state == NSControlStateValueOn)
   { // should try to stop chain
@@ -347,6 +346,8 @@ static void AttemptToStartMissingChains()
     [[NSUserDefaults standardUserDefaults] setObject:[_desiredActiveChains.allObjects valueForKey:@"asDictionary"] forKey:@"ActiveChains"];
     if (!didFind)
       os_log_error(OS_LOG_DEFAULT, "Could not disable chain %s: Not found / active", identifier.description.UTF8String);
+    else
+      UpdateStatusItem();
   }
   else
   { // try to add the chain
@@ -366,8 +367,6 @@ static void AttemptToStartMissingChains()
     [[NSUserDefaults standardUserDefaults] setObject:[_desiredActiveChains.allObjects valueForKey:@"asDictionary"] forKey:@"ActiveChains"];
     AttemptToStartMissingChains();
   }
-  if (_chains.empty() != chainsWereEmpty)
-    UpdateStatusItem();
 }
 
 - (IBAction)toggleUpmix:(NSMenuItem *)item
