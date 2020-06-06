@@ -314,6 +314,14 @@ uint32_t SPDIFAudioEncoder::EncodePacket(const uint32_t numFrames, const SampleT
   _packet.data = _packetBuffer;
   _packet.size = MaxBytesPerPacket;
 
+#if 1
+  int got_packet = 0;
+  status = avcodec_encode_audio2(_codecContext.get(), &_packet, _frame.get(), &got_packet);
+  if (!got_packet)
+    return 0;
+#else
+  // new but repeatedly realloc-calling API: it seems to perform (re)allocs for temporary packets (to make them
+  // refcounted) and it even goes through the old interface for AC3
   status = avcodec_send_frame(_codecContext.get(), _frame.get());
   if (status < 0)
     throw LibAVException(status);
@@ -322,9 +330,9 @@ uint32_t SPDIFAudioEncoder::EncodePacket(const uint32_t numFrames, const SampleT
     return 0; // no packet data
   if (status < 0)
     throw LibAVException(status);
-
   if (_packet.size <= 0)
     return 0;
+#endif
 
   _writePacketBuf = outBuffer;
   _writePacketBufSize = sizeOutBuffer;
