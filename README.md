@@ -4,15 +4,15 @@ Provides a virtual 5.1-channel audio output device whose contents are real-time 
 **WARNING:** Please turn down the speaker / headphone volume before running this application, as any component misinterpreting a compressed audio stream as "normal" audio signals may result in unexpectedly loud noise.
 
 ## Requirements
-The application has been developed on OS X 10.11 "El Capitan", but *should* work on OS X 10.10 "Yosemite" as well. It requires a compatible audio device capable of outputting compressed `AC3` audio formats (format IDs `ac-3`, `cac3`, `IAC3`, `iac3`). All testing was done with `cac3` (aka `kAudioFormat60958AC3`).
+The application has been developed on OS X 10.15 "Catalina", but *should* work on OS X 10.14 "Mojave" as well. It requires a compatible audio device capable of outputting compressed `AC3` audio formats (format IDs `ac-3`, `cac3`, `IAC3`, `iac3`). All testing was done with `cac3` (aka `kAudioFormat60958AC3`).
 
 ## Usage
 There are two components required to make this work:
 
-1. `SoundPusherAudio` — A user-space CoreAudio driver (aka `AudioServerPlugin`) that provides a 5.1 output stream whose contents are mirrored ("looped back") to its own input stream. This allows applications to process the audio output of the system (if it is sent to the `SoundPusher Audio` device). `SoundPusherAudio.driver` must be installed (copied) into the `/Library/Audio/Plug-Ins/HAL` directory. This driver was previously called `Loopback Audio` and you may have to remove the old version (called `LoopbackAudio.driver`) manually.
-2. `SoundPusher` — An application that continuously reads audio from the `SoundPusher Audio` device, encodes it into a compressed format, and then sends that compressed stream to a (hopefully) real sound device's digital output stream. This is controlled through its menu bar extra.
+1. `SoundPusherAudio` — A user-space (sand-boxed) CoreAudio driver (aka `AudioServerPlugin`) that provides a 5.1 channel output stream whose contents are mirrored ("looped back") to its own input stream. This allows applications to process the audio output of the system (if it is sent to the `SoundPusher Audio` device). `SoundPusherAudio.driver` must be installed (copied) into the `/Library/Audio/Plug-Ins/HAL` directory. This driver was previously called `Loopback Audio` and you may have to remove the old version (called `LoopbackAudio.driver`) manually. Instead of this, you can also use any other suitable (6 channel, 48kHz) input device, e.g. [Rogue Amoeba's Loopback](https://rogueamoeba.com/loopback/).
+2. `SoundPusher` — An application that continuously reads audio from `SoundPusher Audio` (or any other suitable) device, encodes it into a compressed format, and then sends that compressed stream to a (hopefully) real sound device's digital output stream. This is controlled through its menu bar extra.
 
-Once the driver is installed and `SoundPusher` running, you should be able to select supported digital output devices which will forward any sound output sent to the `SoundPusher Audio` device to the designated digital output. `SoundPusher` will set the default output device to `SoundPusher Audio` if it was previously set to the device used for digital output.
+Once the driver is installed and `SoundPusher` running, you should be able to select the desired combination of supported input and digital output devices (which will forward any sound output from the input device to the designated digital output). `SoundPusher` will set the default output device to the selected input device (e.g. `SoundPusher Audio`) if it was previously set to the device used for digital output.
 
 ## Contact & Support
 Please report any issues on [GitHub](https://github.com/q-p/SoundPusher).
