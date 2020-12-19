@@ -520,7 +520,7 @@ static OSStatus	SoundPusherAudio_Initialize(AudioServerPlugInDriverRef inDriver,
 	//	calculate the host ticks per frame
 	struct mach_timebase_info theTimeBaseInfo;
 	mach_timebase_info(&theTimeBaseInfo);
-	Float64 theHostClockFrequency = theTimeBaseInfo.denom / theTimeBaseInfo.numer;
+	Float64 theHostClockFrequency = (Float64)theTimeBaseInfo.denom / (Float64)theTimeBaseInfo.numer;
 	theHostClockFrequency *= 1000000000.0;
 	gDevice.HostTicksPerFrame = theHostClockFrequency / gDevice.CurrentFormat.mSampleRate;
 	

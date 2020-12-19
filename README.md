@@ -4,7 +4,7 @@ Provides a virtual 5.1-channel audio output device whose contents are real-time 
 **WARNING:** Please turn down the speaker / headphone volume before running this application, as any component misinterpreting a compressed audio stream as "normal" audio signals may result in unexpectedly loud noise.
 
 ## Requirements
-The application has been developed on OS X 10.15 "Catalina", but *should* work on OS X 10.14 "Mojave" as well. It requires a compatible audio device capable of outputting compressed `AC3` audio formats (format IDs `ac-3`, `cac3`, `IAC3`, `iac3`). All testing was done with `cac3` (aka `kAudioFormat60958AC3`).
+The application is being developed on OS X 11 "Big Sur", but *should* work back to OS X 10.14 "Mojave" as well. It requires a compatible audio device capable of outputting compressed `AC3` audio formats (format IDs `ac-3`, `cac3`, `IAC3`, `iac3`). All testing was done with `cac3` (aka `kAudioFormat60958AC3`).
 
 ## Usage
 There are two components required to make this work:
@@ -22,7 +22,10 @@ Please report any issues on [GitHub](https://github.com/q-p/SoundPusher).
 Here's a script that builds a cut-down version of [FFmpeg](http://www.ffmpeg.org) that includes all that's required for SoundPusher:
 ```sh
 #!/bin/sh
-./configure --prefix=$FFMPEG_HOME --cc=clang --disable-static --enable-shared --disable-all --disable-autodetect --disable-programs --disable-doc --disable-everything --disable-pthreads --disable-network --disable-dct --disable-dwt --disable-lsp --disable-lzo --disable-rdft --disable-faan --disable-pixelutils --enable-avutil --enable-avcodec --enable-avformat --enable-swresample --enable-encoder=ac3 --enable-muxer=spdif
+MACOSX_DEPLOYMENT_TARGET=10.14 export MACOSX_DEPLOYMENT_TARGET
+# when compiling for x86_64 on Apple Silicon (aarch64) you probably want to install yasm and add the following:
+# --extra-cflags="-target x86_64-apple-macos10.14" --extra-ldflags="-target x86_64-apple-macos10.14" --arch=x86 --x86asmexe=<PATH_TO_YASM>/bin/yasm
+./configure --prefix=$FFMPEG_HOME --cc=clang --extra-cflags="-fno-stack-check" --disable-static --enable-shared --disable-all --disable-autodetect --disable-programs --disable-doc --disable-everything --disable-pthreads --disable-network --disable-dct --disable-dwt --disable-lsp --disable-lzo --disable-rdft --disable-faan --disable-pixelutils --enable-avutil --enable-avcodec --enable-avformat --enable-swresample --enable-encoder=ac3 --enable-muxer=spdif
 make -j8
 make install
 # update shared library install names
@@ -36,6 +39,7 @@ do
     install_name_tool -id @rpath/$lib.dylib -change $AVUTIL_ID @rpath/libavutil.dylib -change $AVCODEC_ID @rpath/libavcodec.dylib -change $AVFORMAT_ID @rpath/libavformat.dylib -change $SWRESAMPLE_ID @rpath/libswresample.dylib $lib.dylib
 done
 ```
+If you're building a universal binary (for Intel (x86_64) and Apple Silicon (aarch64)) you probably want to compile FFmpeg twice and then  `lipo --create <inLibA> <inLibB> -output <outLib>` all the resulting libs together.
 
 ## Acknowledgements
 This software is built on the experience of others:
