@@ -40,6 +40,7 @@ do
 done
 ```
 If you're building a universal binary (for Intel (x86_64) and Apple Silicon (aarch64)) you probably want to compile FFmpeg twice and then  `lipo --create <inLibA> <inLibB> -output <outLib>` all the resulting libs together.
+Note that you should add `FFMPEG_HOME` in Xcode's `Preferences` -> `Locations` -> `Custom Paths` and point it towards the install directory of FFmpeg so that the Xcode project can find it.
 
 ## Acknowledgements
 This software is built on the experience of others:
