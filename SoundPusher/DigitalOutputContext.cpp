@@ -55,6 +55,9 @@ double DigitalOutputContext::MeasureSafeIOCycleUsage()
   std::vector<uint8_t> output(_encoder.MaxBytesPerPacket);
   double minUsage = 1.0 / SafetyFactor; // ensures result will at most be 1.0
 
+  // this encodes without upmix (without timing) as well, so we trigger any memory allocations there as well
+  _encoder.EncodePacket(numFramesPerEncode, input.data(), static_cast<uint32_t>(output.size()), output.data(), false);
+
   for (auto i = decltype(NumReps){0}; i < NumReps; ++i)
   {
     const auto start = std::chrono::steady_clock::now();
@@ -94,6 +97,7 @@ DigitalOutputContext::DigitalOutputContext(AudioObjectID device, AudioObjectID s
   TPCircularBufferInit(&_inputBuffer, 4 * numFramesPerPacket * numInputChannels * sizeof (float));
   std::memset(_inputBuffer.buffer, 0, _inputBuffer.length);
 
+  // this also triggers some memory allocations in the upmixing code
   const Float32 cycleUsage = static_cast<Float32>(MeasureSafeIOCycleUsage());
   static const AudioObjectPropertyAddress IOCycleUsageAddress = {kAudioDevicePropertyIOCycleUsage, kAudioObjectPropertyScopeOutput, kAudioObjectPropertyElementMaster};
   UInt32 dataSize = sizeof cycleUsage;

@@ -170,10 +170,15 @@ static std::vector<double> GetUpmixMatrix(AudioChannelLayoutTag channelLayoutTag
 #pragma mark SPDIFAudioEncoder
 //==================================================================================================
 
+/// don't free the buffer (as we allocate it in a big chunk with other stuff)
+static void buffer_no_free(void *opaque, uint8_t *data)
+{ }
+
+
 SPDIFAudioEncoder::SPDIFAudioEncoder(const AudioStreamBasicDescription &inFormat,
   const AudioChannelLayoutTag channelLayoutTag, const AudioStreamBasicDescription &outFormat, os_log_t logger,
   const AVCodecID codecID)
-: _inFormat(inFormat), _outFormat(outFormat), _packetBuffer(nullptr), _packet(),
+: _inFormat(inFormat), _outFormat(outFormat),
   _writePacketBuf(nullptr), _writePacketBufSize(0), _writePacketLogger(logger), _numFramesPerPacket(0)
 {
   int status = 0;
@@ -191,6 +196,7 @@ SPDIFAudioEncoder::SPDIFAudioEncoder(const AudioStreamBasicDescription &inFormat
     coder->strict_std_compliance = -2;
 //    spdifPayloadFactor = 1.0;
   }
+
   const auto outputBitsPerSec = _outFormat.mSampleRate * _outFormat.mChannelsPerFrame * _outFormat.mBitsPerChannel;
   coder->bit_rate = std::floor(outputBitsPerSec * spdifPayloadFactor);
   coder->sample_fmt = *coder->codec->sample_fmts;
@@ -199,6 +205,7 @@ SPDIFAudioEncoder::SPDIFAudioEncoder(const AudioStreamBasicDescription &inFormat
   coder->channels = AudioChannelLayoutTag_GetNumberOfChannels(channelLayoutTag);
   coder->time_base = av_make_q(1, coder->sample_rate);
   coder->codec_type = AVMEDIA_TYPE_AUDIO;
+  coder->opaque = this; // used by GetEncodeBuffer() to find our _packetBuffer
 
   AVDictionary *opts = nullptr;
   status = avcodec_open2(coder, coder->codec, &opts);
@@ -235,7 +242,7 @@ SPDIFAudioEncoder::SPDIFAudioEncoder(const AudioStreamBasicDescription &inFormat
   _frame->nb_samples = coder->frame_size;
 
   const auto coderInputFrameBufferSize = av_samples_get_buffer_size(nullptr, coder->channels, coder->frame_size, coder->sample_fmt, 0);
-  _avBuffer.reset(static_cast<uint8_t *>(av_malloc(coderInputFrameBufferSize + 2 * MaxBytesPerPacket)));
+  _avBuffer.reset(static_cast<uint8_t *>(av_malloc(coderInputFrameBufferSize + 2 * MaxBytesPerPacket + AV_INPUT_BUFFER_PADDING_SIZE)));
   assert(_avBuffer);
 
   // set up _frame for the converted input samples
@@ -243,13 +250,16 @@ SPDIFAudioEncoder::SPDIFAudioEncoder(const AudioStreamBasicDescription &inFormat
   if (status < 0)
     throw LibAVException(status);
   // set _packetBuffer for the output of the coder
-  _packetBuffer = _avBuffer.get() + coderInputFrameBufferSize;
-  // set up the muxed packet output
-  _muxer->pb = avio_alloc_context(_packetBuffer + MaxBytesPerPacket, MaxBytesPerPacket, 1 /* writable */, this, nullptr /* read */,
-    WritePacketFunc, nullptr /* seek */);
+  _packetBuffer.reset(av_buffer_create(_avBuffer.get() + coderInputFrameBufferSize,
+    MaxBytesPerPacket + AV_INPUT_BUFFER_PADDING_SIZE, &buffer_no_free, this, 0));
+  coder->get_encode_buffer = &GetEncodeBuffer;
 
-  av_init_packet(&_packet);
-  _packet.stream_index = 0;
+  // set up the muxed packet output
+  _muxer->pb = avio_alloc_context(_packetBuffer->data + _packetBuffer->size, MaxBytesPerPacket, 1 /* writable */, this,
+    nullptr /* read */, WritePacketFunc, nullptr /* seek */);
+
+  _packet.reset(av_packet_alloc());
+  _packet->stream_index = 0;
 
   // set up format conversion
   _swr.reset(swr_alloc_set_opts(nullptr, _frame->channel_layout, coder->sample_fmt, _frame->sample_rate, _frame->channel_layout, AV_SAMPLE_FMT_FLT, _frame->sample_rate, 0, nullptr));
@@ -282,6 +292,18 @@ SPDIFAudioEncoder::~SPDIFAudioEncoder()
 }
 
 
+/// Called through EncodePacket()'s avcodec_encode_audio2() / codec->encode2() / avcodec_send_frame() call
+int SPDIFAudioEncoder::GetEncodeBuffer(struct AVCodecContext *s, AVPacket *pkt, int flags)
+{
+  auto me = static_cast<SPDIFAudioEncoder *>(s->opaque);
+  assert(me);
+  assert(pkt->size <= MaxBytesPerPacket);
+  // here we insert our re-used AVBuffer (and its AVBufferRef)
+  pkt->buf = me->_packetBuffer.get();
+  pkt->data = pkt->buf->data;
+  return 0;
+}
+
 /// Called through EncodePacket()'s av_write_frame() call
 int SPDIFAudioEncoder::WritePacketFunc(void *opaque, uint8_t *buf, int buf_size)
 {
@@ -310,37 +332,27 @@ uint32_t SPDIFAudioEncoder::EncodePacket(const uint32_t numFrames, const SampleT
   if (status < 0)
     throw LibAVException(status);
 
-  // encoded packet
-  _packet.data = _packetBuffer;
-  _packet.size = MaxBytesPerPacket;
+  // encoded packet (fields will be set by GetEncodeBuffer() callback; setting them now is not supported)
+  _packet->data = nullptr;
+  _packet->buf = nullptr;
+  _packet->size = MaxBytesPerPacket;
 
-#if 1
   int got_packet = 0;
-  status = avcodec_encode_audio2(_codecContext.get(), &_packet, _frame.get(), &got_packet);
+  status = _codecContext->codec->encode2(_codecContext.get(), _packet.get(), _frame.get(), &got_packet);
+  _packet->buf = nullptr; // this avoids the packet freeing the buffer
   if (status < 0)
     throw LibAVException(status);
   if (!got_packet)
     return 0;
-#else
-  // new but repeatedly realloc-calling API: it seems to perform (re)allocs for temporary packets (to make them
-  // refcounted) and it even goes through the old interface for AC3
-  status = avcodec_send_frame(_codecContext.get(), _frame.get());
-  if (status < 0)
-    throw LibAVException(status);
-  status = avcodec_receive_packet(_codecContext.get(), &_packet);
-  if (status == AVERROR(EAGAIN))
-    return 0; // no packet data
-  if (status < 0)
-    throw LibAVException(status);
-  if (_packet.size <= 0)
-    return 0;
-#endif
 
+  // note: we could also switch the buffer pointers in _muxer->pb to outBuffer directly, but doc says the AVIOContext
+  // should be allocated via av_malloc (which we *kinda* do, although we allocate all our buffers in one allocation)
   _writePacketBuf = outBuffer;
   _writePacketBufSize = sizeOutBuffer;
-  status = av_write_frame(_muxer.get(), &_packet);
+  status = _muxer->oformat->write_packet(_muxer.get(), _packet.get());
   if (status < 0)
     throw LibAVException(status);
+  avio_flush(_muxer->pb);
   assert(_writePacketBuf >= outBuffer && _writePacketBuf <= outBuffer + sizeOutBuffer);
 
   const auto numBytesWritten = static_cast<uint32_t>(_writePacketBuf - outBuffer);

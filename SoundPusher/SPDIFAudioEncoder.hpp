@@ -67,6 +67,8 @@ struct SPDIFAudioEncoder
   uint32_t EncodePacket(const uint32_t numFrames, const SampleT *inputFrames, uint32_t sizeOutBuffer, uint8_t *outBuffer, const bool upmix);
 
 protected:
+  /// The method returning a (the) default buffer for the encoder.
+  static int GetEncodeBuffer(struct AVCodecContext *s, AVPacket *pkt, int flags);
   /// The avio_write function called by the muxer to write an encoded packet.
   static int WritePacketFunc(void *opaque, uint8_t *buf, int buf_size);
 
@@ -78,6 +80,10 @@ protected:
   struct AVFormatContextDeleter { void operator()(AVFormatContext *p) const { av_free(p->pb); avformat_free_context(p); } };
   /// Deleter for an AVFrame (allocated with av_frame_alloc()).
   struct AVFrameDeleter { void operator()(AVFrame *p) const { av_frame_free(&p); } };
+  /// Deleter for an AVPacket.
+  struct AVPacketDeleter { void operator()(AVPacket *p) const { av_packet_free(&p); } };
+  /// Deleter for an AVBufferRef.
+  struct AVBufferDeleter { void operator()(AVBufferRef *p) const { av_buffer_unref(&p); } };
   /// Deleter for an SwrContext.
   struct AVSwrContextDeleter { void operator()(SwrContext *p) const { swr_free(&p); } };
 
@@ -86,16 +92,26 @@ protected:
   /// The output format to the encoder (i.e. what it produces).
   AudioStreamBasicDescription _outFormat;
 
-  /// The muxer context.
-  std::unique_ptr<AVFormatContext, AVFormatContextDeleter> _muxer;
   /// The codec context.
   std::unique_ptr<AVCodecContext, AVCodecContextDeleter> _codecContext;
+  /// The muxer context.
+  std::unique_ptr<AVFormatContext, AVFormatContextDeleter> _muxer;
   /// The input audio frame (containing multiple frames (samples) in CoreAudio terms), memory owned by _avBuffer.
   std::unique_ptr<AVFrame, AVFrameDeleter> _frame;
-  /// The buffer for the packet to encode the input frame into, memory owned by _avBuffer;
-  uint8_t *_packetBuffer;
+  /// The buffer holding 1) the input frames in the format required by the codec, 2) the encoded packet, and 3) the muxed packet.
+  std::unique_ptr<uint8_t[], AVDeleter> _avBuffer;
+  /// The AVBufferRef for the compressed packet (the middle chunk in _avBuffer).
+  std::unique_ptr<AVBufferRef, AVBufferDeleter> _packetBuffer;
   /// The encoded packet.
-  AVPacket _packet;
+  std::unique_ptr<AVPacket, AVPacketDeleter> _packet;
+
+  /// The channel-remap from input format to libav channel order, required by the converter.
+  std::vector<int> _input2LibAVChannel;
+  std::unique_ptr<SwrContext, AVSwrContextDeleter> _swr;
+  std::unique_ptr<SwrContext, AVSwrContextDeleter> _swrUpmix;
+
+  /// The number of input frames required to produce an output packet.
+  uint32_t _numFramesPerPacket;
 
   /// Where WritePacketFunc() writes its output.
   uint8_t *_writePacketBuf;
@@ -103,17 +119,6 @@ protected:
   uint32_t _writePacketBufSize;
   /// The logger used (if required) when encoding a packet.
   os_log_t _writePacketLogger;
-
-  /// The number of input frames required to produce an output packet.
-  uint32_t _numFramesPerPacket;
-
-  /// The buffer holding 1) the input frames in the format required by the codec, 2) the encoded packet, and 3) the muxed packet.
-  std::unique_ptr<uint8_t[], AVDeleter> _avBuffer;
-
-  /// The channel-remap from input format to libav channel order, required by the converter.
-  std::vector<int> _input2LibAVChannel;
-  std::unique_ptr<SwrContext, AVSwrContextDeleter> _swr;
-  std::unique_ptr<SwrContext, AVSwrContextDeleter> _swrUpmix;
 };
 
 #endif /* SPDIFAudioEncoder_hpp */
