@@ -14,6 +14,8 @@ There are two components required to make this work:
 
 Once the driver is installed and `SoundPusher` running, you should be able to select the desired combination of supported input and digital output devices (which will forward any sound output from the input device to the designated digital output). `SoundPusher` will set the default output device to the selected input device (e.g. `SoundPusher Audio`) if it was previously set to the device used for digital output.
 
+You can override the default IOCycle timing adjustment (which attempts to postpone the encoding to as late as possible to just before the hardware needs the next packet) in case you notice sound drop-outs or overloads. The default is a safety-factor of 8. This is done via `defaults write de.maven.SoundPusher IOCycleSafetyFactor -float <value>`. Any value less than 1 disables IOCycle adjustment altogether, which means that CoreAudio starts preparing the next packet roughly when the current packet is sent to the hardware (which is usually a bit of a waste as current hardware can easily encode 100x faster than real-time).
+
 ## Contact & Support
 Please report any issues on [GitHub](https://github.com/q-p/SoundPusher).
 
@@ -39,7 +41,7 @@ do
     install_name_tool -id @rpath/$lib.dylib -change $AVUTIL_ID @rpath/libavutil.dylib -change $AVCODEC_ID @rpath/libavcodec.dylib -change $AVFORMAT_ID @rpath/libavformat.dylib -change $SWRESAMPLE_ID @rpath/libswresample.dylib $lib.dylib
 done
 ```
-If you're building a universal binary (for Intel (x86_64) and Apple Silicon (aarch64)) you probably want to compile FFmpeg twice and then  `lipo --create <inLibA> <inLibB> -output <outLib>` all the resulting libs together.
+If you're building a universal binary (for Intel (x86_64) and Apple Silicon (aarch64)) you probably want to compile FFmpeg twice and then  `lipo -create -output <outLib> <inLibA> <inLibB>` all the resulting libs together.
 Note that you should add `FFMPEG_HOME` in Xcode's `Preferences` -> `Locations` -> `Custom Paths` and point it towards the install directory of FFmpeg so that the Xcode project can find it.
 
 ## Acknowledgements

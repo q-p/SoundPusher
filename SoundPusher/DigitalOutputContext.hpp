@@ -23,6 +23,9 @@
 /// A context for a digital output device with a matching encoder.
 struct DigitalOutputContext
 {
+  /// Sets the shared safetyFactor (>= 1.0) for IOCycle adjustment done during construction. IOCycle is not adjusted if < 1.0.
+  static void SetIOCycleSafetyFactor(const double safetyFactor);
+
   /**
    * @param device The device to use (hogged).
    * @param stream The output stream on the device to use.
@@ -76,12 +79,15 @@ struct DigitalOutputContext
 
 protected:
   /// @return the over-estimated portion of how much of the output IOCycle we need to to fill the output buffer.
-  double MeasureSafeIOCycleUsage();
+  double MeasureSafeIOCycleUsage(const double safetyFactor);
 
   /// IOProc called when the digital output device needs a new packet.
   static OSStatus DeviceIOProcFunc(AudioObjectID inDevice, const AudioTimeStamp* inNow,
     const AudioBufferList* inInputData, const AudioTimeStamp* inInputTime, AudioBufferList* outOutputData,
     const AudioTimeStamp* inOutputTime, void* inClientData);
+
+  /// The safety-factor to use during construction.
+  static double IOCycleSafetyFactor;
 
   /// The logger for the IOProc (which is called from a different (real-time) thread).
   os_log_t _log;

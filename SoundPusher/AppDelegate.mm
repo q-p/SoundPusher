@@ -264,6 +264,7 @@ static void AttemptToStartMissingChains(CAHelper::DefaultDeviceChanger *defaultD
 
   [desired minusSet:running];
 
+  DigitalOutputContext::SetIOCycleSafetyFactor([[NSUserDefaults standardUserDefaults] doubleForKey:@"IOCycleSafetyFactor"]);
   for (ForwardingChainIdentifier *attempt in desired)
   {
     // find the devices in the actual device list
@@ -507,11 +508,13 @@ static void AttemptToStartMissingChains(CAHelper::DefaultDeviceChanger *defaultD
   // register defaults
   [[NSUserDefaults standardUserDefaults] registerDefaults:@{
     @"Upmix" : [NSNumber numberWithBool:NO],
+    @"IOCycleSafetyFactor" : [NSNumber numberWithDouble:8.0],
     @"ActiveChains" : @[]
   }];
 
   { // read defaults
     _enableUpmix = [[NSUserDefaults standardUserDefaults] boolForKey:@"Upmix"];
+    // DigitalOutputContext::IOCycleSafetyFactor is set in #AttemptToStartMissingChains()
 
     NSArray<NSDictionary *> *desiredActiveArray = [[NSUserDefaults standardUserDefaults] arrayForKey:@"ActiveChains"];
     for (NSDictionary *dict in desiredActiveArray)
