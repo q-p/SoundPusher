@@ -90,6 +90,7 @@ DigitalOutputContext::DigitalOutputContext(AudioObjectID device, AudioObjectID s
 : _device(device), _stream(stream), _format(format), _channelLayoutTag(channelLayoutTag)
 , _log(os_log_create("de.maven.SoundPusher", "OutIOProc"))
 , _encoder(GetBestInputFormatForOutputFormat(_format, _channelLayoutTag), _channelLayoutTag, _format, _log)
+, _numSafeFrames(_format.mFramesPerPacket)
 , _cycleCounter(0), _minBufferedFramesAtOutputTime(0), _deviceIOProcID(nullptr), _isRunning(false)
 , _hogger(_device, true), _originalFormat(_stream, format)
 {

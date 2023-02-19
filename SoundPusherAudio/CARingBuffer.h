@@ -1,8 +1,9 @@
 /*
      File: CARingBuffer.h
  Abstract: Part of CoreAudio Utility Classes
-  Version: 1.1
- 
+  Version: 1.1*
+  Modified to use C++11 atomics and remove dependency on other CAHelpers.
+
  Disclaimer: IMPORTANT:  This Apple software is supplied to you by Apple
  Inc. ("Apple") in consideration of your agreement to the following
  terms, and your use, installation, modification or redistribution of
@@ -50,6 +51,7 @@
 	#include <CoreAudioTypes.h>
 #endif
 
+#include <atomic>
 
 #ifndef CARingBuffer_Header
 #define CARingBuffer_Header
@@ -112,13 +114,13 @@ protected:
 	
 	// range of valid sample time in the buffer
 	typedef struct {
-		volatile SampleTime		mStartTime;
-		volatile SampleTime		mEndTime;
-		volatile UInt32			mUpdateCounter;
+		std::atomic<SampleTime>		mStartTime;
+		std::atomic<SampleTime>		mEndTime;
+		std::atomic<UInt32>			mUpdateCounter;
 	} TimeBounds;
 	
 	CARingBuffer::TimeBounds mTimeBoundsQueue[kGeneralRingTimeBoundsQueueSize];
-	UInt32 mTimeBoundsQueuePtr;
+	std::atomic<UInt32> mTimeBoundsQueuePtr;
 };
 
 

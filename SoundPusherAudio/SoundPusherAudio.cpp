@@ -15,7 +15,7 @@
 //==================================================================================================
 
 #include <stdint.h>
-#include <stdatomic.h>
+//#include <stdatomic.h>
 
 //	System Includes
 #include <CoreAudio/AudioServerPlugIn.h>
@@ -24,7 +24,7 @@
 #include <os/lock.h>
 
 #include "SoundPusherAudio.h"
-#include "TPCircularBuffer.h"
+#include "CARingBuffer.h"
 
 //==================================================================================================
 #pragma mark -
@@ -149,14 +149,7 @@ typedef struct
 	UInt64						AnchorHostTime;
 	UInt64						TimeLineSeed;
 
-	// We only use the TPCircularBuffer for it's memory-mapping trickery, and write / read from our
-	// computed positions without consuming / producing
-	TPCircularBuffer			RingBuffer;
-
-	// One past the last frame (not modulo buffer size) we've written
-	_Atomic SInt64				LastWriteEndInFrames;
-	// The sliding difference between where we read and write (usually positive because output happens at a later time than input for the same set of buffers)
-	_Atomic SInt64				ReadOffsetInFrames;
+	CARingBuffer				RingBuffer;
 
 	bool						Stream_Input_IsActive;
 	bool						Stream_Output_IsActive;
@@ -188,8 +181,6 @@ static Device gDevice = {
 	.AnchorSampleTime			= 0.0,
 	.AnchorHostTime				= 0,
 	.TimeLineSeed				= 1,
-	.LastWriteEndInFrames		= ATOMIC_VAR_INIT(0),
-	.ReadOffsetInFrames			= ATOMIC_VAR_INIT(0),
 	.Stream_Input_IsActive		= true,
 	.Stream_Output_IsActive		= true,
 	.Stream_Output_Master_Mute	= false,
@@ -302,6 +293,9 @@ static void DescribeChannelLayout(AudioChannelLayoutTag tag, AudioChannelLayout 
 #pragma mark Prototypes
 
 //	Entry points for the COM methods
+
+extern "C" {
+
 void*				SoundPusherAudio_Create(CFAllocatorRef inAllocator, CFUUIDRef inRequestedTypeUUID);
 static HRESULT		SoundPusherAudio_QueryInterface(void* inDriver, REFIID inUUID, LPVOID* outInterface);
 static ULONG		SoundPusherAudio_AddRef(void* inDriver);
@@ -350,6 +344,8 @@ static OSStatus		SoundPusherAudio_IsControlPropertySettable(AudioServerPlugInDri
 static OSStatus		SoundPusherAudio_GetControlPropertyDataSize(AudioServerPlugInDriverRef inDriver, AudioObjectID inObjectID, pid_t inClientProcessID, const AudioObjectPropertyAddress* inAddress, UInt32 inQualifierDataSize, const void* inQualifierData, UInt32* outDataSize);
 static OSStatus		SoundPusherAudio_GetControlPropertyData(AudioServerPlugInDriverRef inDriver, AudioObjectID inObjectID, pid_t inClientProcessID, const AudioObjectPropertyAddress* inAddress, UInt32 inQualifierDataSize, const void* inQualifierData, UInt32 inDataSize, UInt32* outDataSize, void* outData);
 static OSStatus		SoundPusherAudio_SetControlPropertyData(AudioServerPlugInDriverRef inDriver, AudioObjectID inObjectID, pid_t inClientProcessID, const AudioObjectPropertyAddress* inAddress, UInt32 inQualifierDataSize, const void* inQualifierData, UInt32 inDataSize, const void* inData, UInt32* outNumberPropertiesChanged, AudioObjectPropertyAddress outChangedAddresses[2]);
+
+}
 
 #pragma mark The Interface
 
@@ -512,8 +508,12 @@ static OSStatus	SoundPusherAudio_Initialize(AudioServerPlugInDriverRef inDriver,
 	OSStatus theAnswer = 0;
 	
 	//	check the arguments
-	FailWithAction(inDriver != gAudioServerPlugInDriverRef, theAnswer = kAudioHardwareBadObjectError, Done, "SoundPusherAudio_Initialize: bad driver reference");
-	
+	if (inDriver != gAudioServerPlugInDriverRef)
+	{
+		DebugMsg(OS_LOG_TYPE_ERROR, "SoundPusherAudio_Initialize: bad driver reference");
+		return kAudioHardwareBadObjectError;
+	}
+
 	//	store the AudioServerPlugInHostRef
 	gPlugIn_Host = inHost;
 	
@@ -2695,11 +2695,7 @@ static OSStatus	SoundPusherAudio_StartIO(AudioServerPlugInDriverRef inDriver, Au
 	else if(gDevice.IOIsRunning == 0)
 	{
 		//	We need to start the hardware, which in this case is just anchoring the time line.
-		TPCircularBufferInit(&gDevice.RingBuffer, kDevice_RingBuffNumFrames * gDevice.CurrentFormat.mBytesPerFrame);
-		memset(gDevice.RingBuffer.buffer, 0, gDevice.RingBuffer.length);
-
-		gDevice.LastWriteEndInFrames = 0;
-		gDevice.ReadOffsetInFrames = 0;
+		gDevice.RingBuffer.Allocate(1, gDevice.CurrentFormat.mBytesPerFrame, kDevice_RingBuffNumFrames);
 
 		gDevice.TimeLineSeed = 1;
 		gDevice.NumberTimeStamps = 0;
@@ -2747,7 +2743,7 @@ static OSStatus	SoundPusherAudio_StopIO(AudioServerPlugInDriverRef inDriver, Aud
 	else if(gDevice.IOIsRunning == 1)
 	{
 		//	We need to stop the hardware, which in this case means that there's nothing to do.
-		TPCircularBufferCleanup(&gDevice.RingBuffer);
+		gDevice.RingBuffer.Deallocate();
 		gDevice.IOIsRunning = 0;
 	}
 	else
@@ -2827,8 +2823,16 @@ static OSStatus	SoundPusherAudio_WillDoIOOperation(AudioServerPlugInDriverRef in
 	OSStatus theAnswer = 0;
 	
 	//	check the arguments
-	FailWithAction(inDriver != gAudioServerPlugInDriverRef, theAnswer = kAudioHardwareBadObjectError, Done, "SoundPusherAudio_WillDoIOOperation: bad driver reference");
-	FailWithAction(inDeviceObjectID != kObjectID_Device, theAnswer = kAudioHardwareBadObjectError, Done, "SoundPusherAudio_WillDoIOOperation: bad device ID");
+	if (inDriver != gAudioServerPlugInDriverRef)
+	{
+		DebugMsg(OS_LOG_TYPE_ERROR, "SoundPusherAudio_WillDoIOOperation: bad driver reference");
+		return kAudioHardwareBadObjectError;
+	}
+	if (inDeviceObjectID != kObjectID_Device)
+	{
+		DebugMsg(OS_LOG_TYPE_ERROR, "SoundPusherAudio_WillDoIOOperation: bad device ID");
+		return kAudioHardwareBadObjectError;
+	}
 
 	//	figure out if we support the operation
 	bool willDo = false;
@@ -2888,64 +2892,68 @@ static OSStatus	SoundPusherAudio_DoIOOperation(AudioServerPlugInDriverRef inDriv
 	OSStatus theAnswer = 0;
 
 	//	check the arguments
-	FailWithAction(inDriver != gAudioServerPlugInDriverRef, theAnswer = kAudioHardwareBadObjectError, Done, "SoundPusherAudio_DoIOOperation: bad driver reference");
-	FailWithAction(inDeviceObjectID != kObjectID_Device, theAnswer = kAudioHardwareBadObjectError, Done, "SoundPusherAudio_DoIOOperation: bad device ID");
-	FailWithAction((inStreamObjectID != kObjectID_Stream_Input) && (inStreamObjectID != kObjectID_Stream_Output), theAnswer = kAudioHardwareBadObjectError, Done, "SoundPusherAudio_DoIOOperation: bad stream ID");
-
-	const UInt32 numFramesInRingBuffer = gDevice.RingBuffer.length / gDevice.CurrentFormat.mBytesPerFrame;
+	if (inDriver != gAudioServerPlugInDriverRef)
+	{
+		DebugMsg(OS_LOG_TYPE_ERROR, "SoundPusherAudio_DoIOOperation: bad driver reference");
+		return kAudioHardwareBadObjectError;
+	}
+	if (inDeviceObjectID != kObjectID_Device)
+	{
+		DebugMsg(OS_LOG_TYPE_ERROR, "SoundPusherAudio_DoIOOperation: bad device ID");
+		return kAudioHardwareBadObjectError;
+	}
+	if (inStreamObjectID != kObjectID_Stream_Input && inStreamObjectID != kObjectID_Stream_Output)
+	{
+		DebugMsg(OS_LOG_TYPE_ERROR, "SoundPusherAudio_DoIOOperation: bad stream ID");
+		return kAudioHardwareBadObjectError;
+	}
 
 	switch(inOperationID)
 	{
 		case kAudioServerPlugInIOOperationReadInput:
 		{ // provide input from our internal buffer: There can be multiple reader threads
-			const SInt64 lastWriteEndInFrames = atomic_load_explicit(&gDevice.LastWriteEndInFrames, memory_order_acquire);
-			if (lastWriteEndInFrames == 0 || gDevice.Stream_Output_Master_Mute)
-			{ // reading before the first write happened (or muted), so output silence
-				memset(ioMainBuffer, 0, inIOBufferFrameSize * gDevice.CurrentFormat.mBytesPerFrame);
-				break;
-			}
-			SInt64 ReadOffsetInFrames = atomic_load_explicit(&gDevice.ReadOffsetInFrames, memory_order_acquire);
-			if (ReadOffsetInFrames <= 0)
-			{ // we have an invalid read offset, so readjust it to match our last write (so we read the most recent data)
-				const SInt64 newReadOffsetInFrames = lastWriteEndInFrames - (SInt64)inIOCycleInfo->mInputTime.mSampleTime - inIOBufferFrameSize;
-				if (atomic_compare_exchange_strong_explicit(&gDevice.ReadOffsetInFrames, &ReadOffsetInFrames, newReadOffsetInFrames, memory_order_acq_rel, memory_order_acquire))
-					ReadOffsetInFrames = newReadOffsetInFrames;
-				// else ReadOffsetInFrames already contains updated value
-			}
-			if (ReadOffsetInFrames < 0)
-			{ // provide silence if data is old
-				memset(ioMainBuffer, 0, inIOBufferFrameSize * gDevice.CurrentFormat.mBytesPerFrame);
-				break;
-			}
-
-			SInt64 readBegin = (SInt64)inIOCycleInfo->mInputTime.mSampleTime + ReadOffsetInFrames;
-			SInt64 readEnd = readBegin + inIOBufferFrameSize;
-			while (readEnd > lastWriteEndInFrames)
-			{ // we would read beyond the end of the most recent data
-				const SInt64 oldReadOffsetInFrames = ReadOffsetInFrames;
-				#pragma unused(oldReadOffsetInFrames)
-				const SInt64 newReadOffsetInFrames = ReadOffsetInFrames - (readEnd - lastWriteEndInFrames);
-				if (atomic_compare_exchange_weak_explicit(&gDevice.ReadOffsetInFrames, &ReadOffsetInFrames, newReadOffsetInFrames, memory_order_acq_rel, memory_order_acquire))
-				{
-					DebugMsg(OS_LOG_TYPE_INFO, "SoundPusherAudio_ReadInput: adjusting read offset from %lld to %lld", oldReadOffsetInFrames, newReadOffsetInFrames);
-					ReadOffsetInFrames = newReadOffsetInFrames;
+			AudioBufferList abl = {
+				.mNumberBuffers = 1,
+				.mBuffers[0] = {
+					.mNumberChannels = gDevice.CurrentFormat.mChannelsPerFrame,
+					.mDataByteSize = static_cast<UInt32>(inIOBufferFrameSize * sizeof(Float32) * gDevice.CurrentFormat.mChannelsPerFrame),
+					.mData = ioMainBuffer
 				}
-				// else ReadOffsetInFrames already contains updated value
+			};
 
-				readBegin = (SInt64)inIOCycleInfo->mInputTime.mSampleTime + ReadOffsetInFrames;
-				readEnd = readBegin + inIOBufferFrameSize;
+			auto err = gDevice.RingBuffer.Fetch(&abl, inIOBufferFrameSize, static_cast<CARingBuffer::SampleTime>(inIOCycleInfo->mInputTime.mSampleTime));
+			switch (err)
+			{
+				case kCARingBufferError_CPUOverload:
+					memset(ioMainBuffer, 0, abl.mBuffers[0].mDataByteSize);
+					break;
+				case kCARingBufferError_TooMuch:
+					memset(ioMainBuffer, 0, abl.mBuffers[0].mDataByteSize);
+					DebugMsg(OS_LOG_TYPE_ERROR, "SoundPusherAudio_DoIOOperation: kCARingBufferError_TooMuch");
+					return kAudioHardwareUnspecifiedError;
+				case kCARingBufferError_OK:
+					break;
+				default:
+					DebugMsg(OS_LOG_TYPE_ERROR, "SoundPusherAudio_DoIOOperation: kCARingBufferError_???");
+					return kAudioHardwareUnspecifiedError;
 			}
-
-			uint8_t *bufferBegin = (uint8_t *)gDevice.RingBuffer.buffer + (readBegin % numFramesInRingBuffer) * gDevice.CurrentFormat.mBytesPerFrame;
-			memcpy(ioMainBuffer, bufferBegin, inIOBufferFrameSize * gDevice.CurrentFormat.mBytesPerFrame);
 			break;
 		}
 		case kAudioServerPlugInIOOperationWriteMix:
 		{ // write input to our internal buffer: There can only be one writer thread
-			const SInt64 writeBegin = (SInt64)inIOCycleInfo->mOutputTime.mSampleTime;
-			uint8_t *bufferBegin = (uint8_t *)gDevice.RingBuffer.buffer + (writeBegin % numFramesInRingBuffer) * gDevice.CurrentFormat.mBytesPerFrame;
-			memcpy(bufferBegin, ioMainBuffer, inIOBufferFrameSize * gDevice.CurrentFormat.mBytesPerFrame);
-			atomic_store_explicit(&gDevice.LastWriteEndInFrames, writeBegin + inIOBufferFrameSize, memory_order_release);
+			AudioBufferList abl = {
+				.mNumberBuffers = 1,
+				.mBuffers[0] = {
+					.mNumberChannels = gDevice.CurrentFormat.mChannelsPerFrame,
+					.mDataByteSize = static_cast<UInt32>(inIOBufferFrameSize * sizeof(Float32) * gDevice.CurrentFormat.mChannelsPerFrame),
+					.mData = const_cast<void *>(ioMainBuffer)
+				}
+			};
+
+			auto err = gDevice.RingBuffer.Store(&abl, inIOBufferFrameSize, static_cast<CARingBuffer::SampleTime>(inIOCycleInfo->mOutputTime.mSampleTime));
+			if (err != kCARingBufferError_OK && err != kCARingBufferError_CPUOverload)
+				return kAudioHardwareUnspecifiedError;
+
 			break;
 		}
 	}

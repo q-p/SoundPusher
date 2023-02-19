@@ -1,7 +1,8 @@
 /*
      File: CARingBuffer.cpp
  Abstract: CARingBuffer.h
-  Version: 1.1
+  Version: 1.1*
+  Modified to use C++11 atomics and remove dependency on other CAHelpers.
  
  Disclaimer: IMPORTANT:  This Apple software is supplied to you by Apple
  Inc. ("Apple") in consideration of your agreement to the following
@@ -45,14 +46,48 @@
  
 */
 #include "CARingBuffer.h"
-#include "CABitOperations.h"
-#include "CAAutoDisposer.h"
-#include "CAAtomic.h"
+//#include "CABitOperations.h"
+//#include "CAAutoDisposer.h"
+//#include "CAAtomic.h"
 
 #include <stdlib.h>
 #include <string.h>
 #include <algorithm>
-#include <libkern/OSAtomic.h>
+
+static UInt32 CountLeadingZeroes(UInt32 arg)
+{
+// GNUC / LLVM have a builtin
+#if defined(__GNUC__) || defined(__llvm___)
+#if (TARGET_CPU_X86 || TARGET_CPU_X86_64)
+	if (arg == 0) return 32;
+#endif	// TARGET_CPU_X86 || TARGET_CPU_X86_64
+	return __builtin_clz(arg);
+#elif TARGET_OS_WIN32
+	UInt32 tmp;
+	__asm{
+		bsr eax, arg
+		mov ecx, 63
+		cmovz eax, ecx
+		xor eax, 31
+		mov tmp, eax	// this moves the result in tmp to return.
+    }
+	return tmp;
+#else
+#error "Unsupported architecture"
+#endif	// defined(__GNUC__)
+}
+
+static UInt32 Log2Ceil(UInt32 x)
+{
+	return 32 - CountLeadingZeroes(x - 1);
+}
+
+// next power of two greater or equal to x
+static UInt32 NextPowerOfTwo(UInt32 x)
+{
+	return 1 << Log2Ceil(x);
+}
+
 
 CARingBuffer::CARingBuffer() :
 	mBuffers(NULL), mNumberChannels(0), mCapacityFrames(0), mCapacityBytes(0)
@@ -79,9 +114,7 @@ void	CARingBuffer::Allocate(int nChannels, UInt32 bytesPerFrame, UInt32 capacity
 	mCapacityBytes = bytesPerFrame * capacityFrames;
 
 	// put everything in one memory allocation, first the pointers, then the deinterleaved channels
-	UInt32 allocSize = (mCapacityBytes + sizeof(Byte *)) * nChannels;
-	Byte *p = (Byte *)CA_malloc(allocSize);
-	memset(p, 0, allocSize);
+	Byte *p = (Byte *)calloc(nChannels, sizeof(Byte *) + mCapacityBytes);
 	mBuffers = (Byte **)p;
 	p += nChannels * sizeof(Byte *);
 	for (int i = 0; i < nChannels; ++i) {
@@ -213,13 +246,15 @@ CARingBufferError	CARingBuffer::Store(const AudioBufferList *abl, UInt32 framesT
 
 void	CARingBuffer::SetTimeBounds(SampleTime startTime, SampleTime endTime)
 {
-	UInt32 nextPtr = mTimeBoundsQueuePtr + 1;
+	UInt32 nextPtr = mTimeBoundsQueuePtr.load(std::memory_order_acquire) + 1;
 	UInt32 index = nextPtr & kGeneralRingTimeBoundsQueueMask;
 	
-	mTimeBoundsQueue[index].mStartTime = startTime;
-	mTimeBoundsQueue[index].mEndTime = endTime;
-	mTimeBoundsQueue[index].mUpdateCounter = nextPtr;
-	CAAtomicCompareAndSwap32Barrier(mTimeBoundsQueuePtr, mTimeBoundsQueuePtr + 1, (SInt32*)&mTimeBoundsQueuePtr);
+	mTimeBoundsQueue[index].mStartTime.store(startTime, std::memory_order_relaxed);
+	mTimeBoundsQueue[index].mEndTime.store(endTime, std::memory_order_relaxed);
+	mTimeBoundsQueue[index].mUpdateCounter.store(nextPtr, std::memory_order_relaxed);
+
+	auto expected = nextPtr - 1;
+	mTimeBoundsQueuePtr.compare_exchange_strong(expected, nextPtr, std::memory_order_acq_rel);
 }
 
 CARingBufferError	CARingBuffer::GetTimeBounds(SampleTime &startTime, SampleTime &endTime)
