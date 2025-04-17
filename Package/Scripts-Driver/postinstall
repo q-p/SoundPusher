@@ -1,2 +1,2 @@
 #!/bin/sh
-launchctl kickstart -k system/com.apple.audio.coreaudiod
+sudo killall coreaudiod || true
