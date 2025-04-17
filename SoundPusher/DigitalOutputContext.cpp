@@ -86,10 +86,11 @@ double DigitalOutputContext::MeasureSafeIOCycleUsage(const double safetyFactor)
 }
 
 DigitalOutputContext::DigitalOutputContext(AudioObjectID device, AudioObjectID stream,
-  const AudioStreamBasicDescription &format, const AudioChannelLayoutTag channelLayoutTag)
+  const AudioStreamBasicDescription &format, const AudioChannelLayoutTag channelLayoutTag, bool useDLPiiUpmix)
 : _device(device), _stream(stream), _format(format), _channelLayoutTag(channelLayoutTag)
 , _log(os_log_create("de.maven.SoundPusher", "OutIOProc"))
-, _encoder(GetBestInputFormatForOutputFormat(_format, _channelLayoutTag), _channelLayoutTag, _format, _log)
+, _encoder(GetBestInputFormatForOutputFormat(_format, _channelLayoutTag),
+    _channelLayoutTag, _format, _log, useDLPiiUpmix)
 , _numSafeFrames(_format.mFramesPerPacket)
 , _cycleCounter(0), _minBufferedFramesAtOutputTime(0), _deviceIOProcID(nullptr), _isRunning(false)
 , _hogger(_device, true), _originalFormat(_stream, format)

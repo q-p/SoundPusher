@@ -31,9 +31,11 @@ struct DigitalOutputContext
    * @param stream The output stream on the device to use.
    * @param format The (digital) output format to use for the stream.
    * @param channelLayoutTag The channel layout to use for both the input and compressed output data.
+   * @param useDLPiiUpmix Whether to use the Dolby Pro Logic II sqrt(3)/2 for upmixing the respective front channel to
+   *   its back channel (this is asymmetric), or whether to use 0.5.
    */
   DigitalOutputContext(AudioObjectID device, AudioObjectID stream, const AudioStreamBasicDescription &format,
-    const AudioChannelLayoutTag channelLayoutTag);
+    const AudioChannelLayoutTag channelLayoutTag, bool useDLPiiUpmix);
 
   ~DigitalOutputContext();
 

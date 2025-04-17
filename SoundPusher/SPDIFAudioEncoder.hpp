@@ -37,10 +37,13 @@ struct SPDIFAudioEncoder
    * @param channelLayoutTag The channel layout of the input (and final compressed output) channels.
    * @param outFormat The digital, compressed SPDIF output format to be produced by the encoder.
    * @param logger The logger to use.
+   * @param useDLPiiUpmix Whether to use the Dolby Pro Logic II sqrt(3)/2 for upmixing the respective front channel to
+   *   its back channel (this is asymmetric), or whether to use 0.5.
    * @param codecID The libavcodec codec to use for compression.
    */
   SPDIFAudioEncoder(const AudioStreamBasicDescription &inFormat, const AudioChannelLayoutTag channelLayoutTag,
-    const AudioStreamBasicDescription &outFormat, os_log_t logger, const AVCodecID codecID = AV_CODEC_ID_AC3);
+    const AudioStreamBasicDescription &outFormat, os_log_t logger, bool useDLPiiUpmix,
+    const AVCodecID codecID = AV_CODEC_ID_AC3);
 
   ~SPDIFAudioEncoder();
 

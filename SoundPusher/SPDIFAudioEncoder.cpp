@@ -91,9 +91,10 @@ static uint64_t AudioChannelLayoutTagToAVChannelLayout(AudioChannelLayoutTag cha
 }
 
 
-static std::vector<double> GetUpmixMatrix(AudioChannelLayoutTag channelLayoutTag, const std::vector<int> &input2LibAVChannel)
+static std::vector<double> GetUpmixMatrix(AudioChannelLayoutTag channelLayoutTag, const std::vector<int> &input2LibAVChannel, bool isDLPii)
 {
-  static constexpr auto InvSqr2 = 0.7071067811865475;
+  static constexpr auto InvSqrt2 =   0.7071067811865475;
+  static constexpr auto Sqrt3Over2 = 0.8660254037844386;
   const auto numIn = input2LibAVChannel.size();
   const auto numOut = numIn; // for now
   std::vector<double> matrix(numIn * numOut, 0.0);
@@ -110,8 +111,8 @@ static std::vector<double> GetUpmixMatrix(AudioChannelLayoutTag channelLayoutTag
       auto &left2Center  = matrix[input2LibAVChannel[2] * numIn + input2LibAVChannel[0]];
       auto &right2Center = matrix[input2LibAVChannel[2] * numIn + input2LibAVChannel[1]];
       assert(left2Center == 0.0 && right2Center == 0.0);
-      left2Center  = InvSqr2;
-      right2Center = InvSqr2;
+      left2Center  = InvSqrt2;
+      right2Center = InvSqrt2;
       break;
     }
     case kAudioChannelLayoutTag_AudioUnit_4: // L R Ls Rs
@@ -128,18 +129,18 @@ static std::vector<double> GetUpmixMatrix(AudioChannelLayoutTag channelLayoutTag
       auto &left2Center  = matrix[input2LibAVChannel[4] * numIn + input2LibAVChannel[0]];
       auto &right2Center = matrix[input2LibAVChannel[4] * numIn + input2LibAVChannel[1]];
       assert(left2Center == 0.0 && right2Center == 0.0);
-      left2Center  = InvSqr2;
-      right2Center = InvSqr2;
+      left2Center  = InvSqrt2;
+      right2Center = InvSqrt2;
       auto &left2BackLeft  = matrix[input2LibAVChannel[2] * numIn + input2LibAVChannel[0]];
       auto &right2BackLeft = matrix[input2LibAVChannel[2] * numIn + input2LibAVChannel[1]];
       assert(left2BackLeft == 0.0 && right2BackLeft == 0.0);
-      left2BackLeft  =  0.5;
+      left2BackLeft  = isDLPii ? Sqrt3Over2 : 0.5;
       right2BackLeft = -0.5;
       auto &left2BackRight  = matrix[input2LibAVChannel[3] * numIn + input2LibAVChannel[0]];
       auto &right2BackRight = matrix[input2LibAVChannel[3] * numIn + input2LibAVChannel[1]];
       assert(left2BackRight == 0.0 && right2BackRight == 0.0);
       left2BackRight  = -0.5;
-      right2BackRight =  0.5;
+      right2BackRight = isDLPii ? Sqrt3Over2 : 0.5;
       break;
     }
     case kAudioChannelLayoutTag_AudioUnit_5_1: // L R C LFE Ls Rs
@@ -147,18 +148,18 @@ static std::vector<double> GetUpmixMatrix(AudioChannelLayoutTag channelLayoutTag
       auto &left2Center  = matrix[input2LibAVChannel[2] * numIn + input2LibAVChannel[0]];
       auto &right2Center = matrix[input2LibAVChannel[2] * numIn + input2LibAVChannel[1]];
       assert(left2Center == 0.0 && right2Center == 0.0);
-      left2Center  = InvSqr2;
-      right2Center = InvSqr2;
+      left2Center  = InvSqrt2;
+      right2Center = InvSqrt2;
       auto &left2BackLeft  = matrix[input2LibAVChannel[4] * numIn + input2LibAVChannel[0]];
       auto &right2BackLeft = matrix[input2LibAVChannel[4] * numIn + input2LibAVChannel[1]];
       assert(left2BackLeft == 0.0 && right2BackLeft == 0.0);
-      left2BackLeft  =  0.5;
+      left2BackLeft  = isDLPii ? Sqrt3Over2 : 0.5;
       right2BackLeft = -0.5;
       auto &left2BackRight  = matrix[input2LibAVChannel[5] * numIn + input2LibAVChannel[0]];
       auto &right2BackRight = matrix[input2LibAVChannel[5] * numIn + input2LibAVChannel[1]];
       assert(left2BackRight == 0.0 && right2BackRight == 0.0);
       left2BackRight  = -0.5;
-      right2BackRight =  0.5;
+      right2BackRight = isDLPii ? Sqrt3Over2 : 0.5;
       break;
     }
   }
@@ -177,7 +178,7 @@ static void buffer_no_free(void *opaque, uint8_t *data)
 
 SPDIFAudioEncoder::SPDIFAudioEncoder(const AudioStreamBasicDescription &inFormat,
   const AudioChannelLayoutTag channelLayoutTag, const AudioStreamBasicDescription &outFormat, os_log_t logger,
-  const AVCodecID codecID)
+  bool useDLPiiUpmix, const AVCodecID codecID)
 : _inFormat(inFormat), _outFormat(outFormat),
   _writePacketBuf(nullptr), _writePacketBufSize(0), _writePacketLogger(logger), _numFramesPerPacket(0)
 {
@@ -272,7 +273,7 @@ SPDIFAudioEncoder::SPDIFAudioEncoder(const AudioStreamBasicDescription &inFormat
   assert(swr_get_delay(_swr.get(), _frame->sample_rate) == 0);
 
   _swrUpmix.reset(swr_alloc_set_opts(nullptr, _frame->channel_layout, coder->sample_fmt, _frame->sample_rate, _frame->channel_layout, AV_SAMPLE_FMT_FLT, _frame->sample_rate, 0, nullptr));
-  const auto upmixMatrix = GetUpmixMatrix(channelLayoutTag, _input2LibAVChannel);
+  const auto upmixMatrix = GetUpmixMatrix(channelLayoutTag, _input2LibAVChannel, useDLPiiUpmix);
   status = swr_set_matrix(_swrUpmix.get(), upmixMatrix.data(), static_cast<int>(_input2LibAVChannel.size()));
   if (status < 0)
     throw LibAVException(status);

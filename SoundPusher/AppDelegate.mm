@@ -143,7 +143,8 @@ struct ForwardingChain
     const AudioChannelLayoutTag channelLayoutTag, CAHelper::DefaultDeviceChanger *oldDefaultDevice = nullptr)
   : _identifier(identifier)
   , _defaultDevice(outDevice, inDevice, oldDefaultDevice)
-  , _output(outDevice, outStream, outFormat, channelLayoutTag)
+  , _output(outDevice, outStream, outFormat, channelLayoutTag,
+      [[NSUserDefaults standardUserDefaults] boolForKey:@"UpmixDPLiiRear"])
   , _input(inDevice, inStream, _output)
   {
     OSStatus status = AudioObjectAddPropertyListener(_output._device, &DeviceAliveAddress, DeviceAliveListenerFunc, this);
@@ -508,6 +509,7 @@ static void AttemptToStartMissingChains(CAHelper::DefaultDeviceChanger *defaultD
   // register defaults
   [[NSUserDefaults standardUserDefaults] registerDefaults:@{
     @"Upmix" : [NSNumber numberWithBool:NO],
+    @"UpmixDPLiiRear" : [NSNumber numberWithBool:YES],
     @"IOCycleSafetyFactor" : [NSNumber numberWithDouble:8.0],
     @"ActiveChains" : @[]
   }];
