@@ -40,7 +40,7 @@ CoreAudioException::CoreAudioException(const std::string &what, const OSStatus e
 { }
 
 const AudioObjectPropertyAddress DeviceUIDAddress = {kAudioDevicePropertyDeviceUID, 0, 0};
-const AudioObjectPropertyAddress ObjectNameAddress = {kAudioObjectPropertyName, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMaster};
+const AudioObjectPropertyAddress ObjectNameAddress = {kAudioObjectPropertyName, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain};
 
 CFStringRef GetStringProperty(const AudioObjectID device, const AudioObjectPropertyAddress &address)
 {
@@ -99,7 +99,7 @@ std::vector<AudioStreamBasicDescription> GetStreamPhysicalFormats(const AudioObj
 
 static UInt32 GetNumStreams(const AudioObjectID device, const bool input)
 {
-  const AudioObjectPropertyAddress streamsAddress = {kAudioDevicePropertyStreams, input ? kAudioObjectPropertyScopeInput : kAudioObjectPropertyScopeOutput, kAudioObjectPropertyElementMaster};
+  const AudioObjectPropertyAddress streamsAddress = {kAudioDevicePropertyStreams, input ? kAudioObjectPropertyScopeInput : kAudioObjectPropertyScopeOutput, kAudioObjectPropertyElementMain};
   UInt32 dataSize = 0;
   OSStatus status = noErr;
 
@@ -112,7 +112,7 @@ static UInt32 GetNumStreams(const AudioObjectID device, const bool input)
 
 std::vector<AudioObjectID> GetStreams(const AudioObjectID device, const bool input)
 {
-  const AudioObjectPropertyAddress streamsAddress = {kAudioDevicePropertyStreams, input ? kAudioObjectPropertyScopeInput : kAudioObjectPropertyScopeOutput, kAudioObjectPropertyElementMaster};
+  const AudioObjectPropertyAddress streamsAddress = {kAudioDevicePropertyStreams, input ? kAudioObjectPropertyScopeInput : kAudioObjectPropertyScopeOutput, kAudioObjectPropertyElementMain};
 
   // get streams
   std::vector<AudioObjectID> streams(GetNumStreams(device, input));
@@ -132,7 +132,7 @@ std::vector<AudioObjectID> GetDevices()
   UInt32 dataSize = 0;
   OSStatus status = noErr;
 
-  static const AudioObjectPropertyAddress audioDevicesAddress = {kAudioHardwarePropertyDevices, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMaster};
+  static const AudioObjectPropertyAddress audioDevicesAddress = {kAudioHardwarePropertyDevices, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain};
 
   // num devices
   status = AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, &audioDevicesAddress, 0, NULL, &dataSize);
@@ -153,7 +153,7 @@ std::vector<AudioObjectID> GetDevices()
 
 void SetStreamsEnabled(const AudioObjectID device, const AudioDeviceIOProcID IOProcID, const bool input, const bool enabled)
 {
-  const AudioObjectPropertyAddress streamUsageAddress = {kAudioDevicePropertyIOProcStreamUsage, input ? kAudioObjectPropertyScopeInput : kAudioObjectPropertyScopeOutput, kAudioObjectPropertyElementMaster};
+  const AudioObjectPropertyAddress streamUsageAddress = {kAudioDevicePropertyIOProcStreamUsage, input ? kAudioObjectPropertyScopeInput : kAudioObjectPropertyScopeOutput, kAudioObjectPropertyElementMain};
 
   const UInt32 numStreams = GetNumStreams(device, input);
 
@@ -161,7 +161,7 @@ void SetStreamsEnabled(const AudioObjectID device, const AudioDeviceIOProcID IOP
     return;
 
   std::size_t size = offsetof(AudioHardwareIOProcStreamUsage, mStreamIsOn) + (numStreams * sizeof(UInt32));
-  auto storage = std::make_unique<uint8_t[]>(size);
+  auto storage = std::make_unique<std::byte[]>(size);
   auto *usage = reinterpret_cast<AudioHardwareIOProcStreamUsage *>(storage.get());
   usage->mIOProc = reinterpret_cast<void *>(IOProcID);
   usage->mNumberStreams = numStreams;
@@ -178,7 +178,7 @@ void SetStreamsEnabled(const AudioObjectID device, const AudioDeviceIOProcID IOP
 #pragma mark DefaultDeviceChanger
 //==================================================================================================
 
-static const AudioObjectPropertyAddress DefaultDeviceAddress = {kAudioHardwarePropertyDefaultOutputDevice, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMaster};
+static const AudioObjectPropertyAddress DefaultDeviceAddress = {kAudioHardwarePropertyDefaultOutputDevice, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain};
 
 DefaultDeviceChanger::DefaultDeviceChanger()
 : _originalDevice(-1)
@@ -245,7 +245,7 @@ DefaultDeviceChanger::~DefaultDeviceChanger()
 #pragma mark DeviceHogger
 //==================================================================================================
 
-static const AudioObjectPropertyAddress DeviceHogModeAddress = {kAudioDevicePropertyHogMode, kAudioObjectPropertyScopeOutput, kAudioObjectPropertyElementMaster};
+static const AudioObjectPropertyAddress DeviceHogModeAddress = {kAudioDevicePropertyHogMode, kAudioObjectPropertyScopeOutput, kAudioObjectPropertyElementMain};
 
 DeviceHogger::DeviceHogger(const AudioObjectID device, const bool shouldHog)
 : _device(device), _hog_pid(-1)
@@ -293,7 +293,7 @@ DeviceHogger::~DeviceHogger()
 #pragma mark FormatSetter
 //==================================================================================================
 
-static const AudioObjectPropertyAddress StreamPhysicalFormatAddress = {kAudioStreamPropertyPhysicalFormat, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMaster};
+static const AudioObjectPropertyAddress StreamPhysicalFormatAddress = {kAudioStreamPropertyPhysicalFormat, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain};
 
 FormatSetter::FormatSetter(const AudioObjectID stream, const AudioStreamBasicDescription &format)
 : _stream(stream), _originalFormat(), _didChange(false)

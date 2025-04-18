@@ -22,9 +22,9 @@ ForwardingInputTap::ForwardingInputTap(AudioObjectID device, AudioObjectID strea
   OSStatus status = AudioDeviceCreateIOProcID(_device, DeviceIOProcFunc, this, &_deviceIOProcID);
   if (status != noErr)
     throw CAHelper::CoreAudioException("ForwardingInputTap::AudioDeviceCreateIOProcID()", status);
-  CAHelper::SetStreamsEnabled(_device, _deviceIOProcID, false, false); // disable any output streams
+  CAHelper::SetStreamsEnabled(_device, _deviceIOProcID, /* input */false, false);
 
-  static const AudioObjectPropertyAddress BufferFrameSizeAddress = {kAudioDevicePropertyBufferFrameSize, kAudioObjectPropertyScopeInput, kAudioObjectPropertyElementMaster};
+  static const AudioObjectPropertyAddress BufferFrameSizeAddress = {kAudioDevicePropertyBufferFrameSize, kAudioObjectPropertyScopeInput, kAudioObjectPropertyElementMain};
   const UInt32 desiredBufferFrameSize = std::max(UInt32{128}, _outContext.GetNumFramesPerPacket() / 12);
   UInt32 dataSize = sizeof desiredBufferFrameSize;
   status = AudioObjectSetPropertyData(_device, &BufferFrameSizeAddress, 0, NULL, dataSize, &desiredBufferFrameSize);
@@ -68,11 +68,14 @@ OSStatus ForwardingInputTap::DeviceIOProcFunc(AudioObjectID inDevice, const Audi
   const AudioTimeStamp* inOutputTime, void* inClientData)
 {
   ForwardingInputTap *me = static_cast<ForwardingInputTap *>(inClientData);
-  assert(inInputData->mNumberBuffers == 1);
-  assert(inInputData->mBuffers[0].mNumberChannels == me->_format.mChannelsPerFrame);
-
-  const float *input = static_cast<const float *>(inInputData->mBuffers[0].mData);
-  const uint32_t available = inInputData->mBuffers[0].mDataByteSize / (me->_format.mChannelsPerFrame * sizeof *input);
+  auto numBuffers = inInputData->mNumberBuffers;
+  assert(numBuffers > 0);
+  // we may have inputs in the aggregate device, so we assume the tap is the final input
+  const auto bufIdx = numBuffers > 0 ? numBuffers - 1 : decltype(numBuffers){0};
+  const auto &buffer = inInputData->mBuffers[bufIdx];
+  assert(buffer.mNumberChannels == me->_format.mChannelsPerFrame);
+  const float *input = static_cast<const float *>(buffer.mData);
+  const uint32_t available = buffer.mDataByteSize / (me->_format.mChannelsPerFrame * sizeof *input);
   me->_outContext.AppendInputFrames(available, me->_format.mChannelsPerFrame, input);
   return noErr;
 }

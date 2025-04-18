@@ -33,7 +33,9 @@
 	<key>NSMainNibFile</key>
 	<string>MainMenu</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Audio input (which counts as microphone access) from the SoundPusher Audio device is the source of the encoded audio; no other audio devices are used as input.</string>
+	<string>Audio input (which counts as microphone access) from the selected audio device is the source of the encoded audio; no other audio devices are used as input.</string>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>SoundPusher requires access to application audio to encode and output it.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 </dict>

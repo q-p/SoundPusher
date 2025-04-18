@@ -66,7 +66,6 @@ protected:
   bool _didChange;
 };
 
-
 } // end namespace CAHelper
 
 #endif /* CoreAudioHelper_hpp */

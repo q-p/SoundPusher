@@ -10,6 +10,7 @@
 
 @interface ForwardingChainIdentifier : NSObject
 - (nullable instancetype)init NS_UNAVAILABLE;
+// note: these are the stream indices in *our* stream list, which may be filtered (and so may not match device stream index)
 - (nonnull instancetype)initWithInDeviceUID:(nonnull NSString *)theInDeviceUID andInStreamIndex:(NSUInteger)theInStreamIndex andOutDeviceUID:(nonnull NSString *)theOutDeviceUID andOutStreamIndex:(NSUInteger)theOutStreamIndex NS_DESIGNATED_INITIALIZER;
 + (nullable instancetype)identifierWithDictionary:(nullable NSDictionary *)dict;
 @property (readonly, nonatomic, nonnull) NSString *inDeviceUID;

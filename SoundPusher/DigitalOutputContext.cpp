@@ -98,7 +98,7 @@ DigitalOutputContext::DigitalOutputContext(AudioObjectID device, AudioObjectID s
   OSStatus status = AudioDeviceCreateIOProcID(_device, DeviceIOProcFunc, this, &_deviceIOProcID);
   if (status != noErr)
     throw CAHelper::CoreAudioException("DigitalOutputContext::AudioDeviceCreateIOProcID()", status);
-  CAHelper::SetStreamsEnabled(_device, _deviceIOProcID, true, false); // disable any input streams
+  CAHelper::SetStreamsEnabled(_device, _deviceIOProcID, /* input */true, false); // disable any input streams
 
   const auto numFramesPerPacket = GetNumFramesPerPacket();
   const auto numInputChannels = GetNumInputChannels();
@@ -110,7 +110,7 @@ DigitalOutputContext::DigitalOutputContext(AudioObjectID device, AudioObjectID s
   const Float32 cycleUsage = static_cast<Float32>(MeasureSafeIOCycleUsage(std::max(1.0, safetyFactor)));
   if (safetyFactor >= 1.0)
   {
-    static const AudioObjectPropertyAddress IOCycleUsageAddress = {kAudioDevicePropertyIOCycleUsage, kAudioObjectPropertyScopeOutput, kAudioObjectPropertyElementMaster};
+    static const AudioObjectPropertyAddress IOCycleUsageAddress = {kAudioDevicePropertyIOCycleUsage, kAudioObjectPropertyScopeOutput, kAudioObjectPropertyElementMain};
     UInt32 dataSize = sizeof cycleUsage;
     status = AudioObjectSetPropertyData(_device, &IOCycleUsageAddress, 0, NULL, dataSize, &cycleUsage);
     if (status != noErr)
