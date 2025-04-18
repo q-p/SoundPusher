@@ -4,17 +4,20 @@ Provides a virtual 5.1-channel audio output device whose contents are real-time 
 **WARNING:** Please turn down the speaker / headphone volume before running this application, as any component misinterpreting a compressed audio stream as "normal" audio signals may result in unexpectedly loud noise.
 
 ## Requirements
-The application is being developed on OS X 11 "Big Sur", but *should* work back to OS X 10.14 "Mojave" as well. It requires a compatible audio device capable of outputting compressed `AC3` audio formats (format IDs `ac-3`, `cac3`, `IAC3`, `iac3`). All testing was done with `cac3` (aka `kAudioFormat60958AC3`).
+The application requires macOS 14.2 "Sonoma" due to use of Core Audio taps to capture the system audio.
+It requires a compatible audio device capable of outputting compressed `AC3` audio formats (format IDs `ac-3`, `cac3`, `IAC3`, `iac3`). All testing was done with `cac3` (aka `kAudioFormat60958AC3`).
 
 ## Usage
 There are two components required to make this work:
 
-1. `SoundPusherAudio` — A user-space (sand-boxed) CoreAudio driver (aka `AudioServerPlugin`) that provides a 5.1 channel output stream whose contents are mirrored ("looped back") to its own input stream. This allows applications to process the audio output of the system (if it is sent to the `SoundPusher Audio` device). `SoundPusherAudio.driver` must be installed (copied) into the `/Library/Audio/Plug-Ins/HAL` directory. This driver was previously called `Loopback Audio` and you may have to remove the old version (called `LoopbackAudio.driver`) manually. Instead of this, you can also use any other suitable (6 channel, 48kHz) input device, e.g. [Rogue Amoeba's Loopback](https://rogueamoeba.com/loopback/).
+1. `SoundPusherAudio` — A user-space (sand-boxed) CoreAudio driver (aka `AudioServerPlugin`) that provides a 5.1 channel output stream whose contents can then be captured. `SoundPusherAudio.driver` must be installed (copied) into the `/Library/Audio/Plug-Ins/HAL` directory. This driver was previously called `Loopback Audio` and you may have to remove the old version (called `LoopbackAudio.driver`) manually. Instead of this, you can also use any other suitable (6 channel, 48kHz) output device, e.g. [Rogue Amoeba's Loopback](https://rogueamoeba.com/loopback/). Note that if this device provides audio inputs, you may have to allow microphone access in addition to system audio recording.
 2. `SoundPusher` — An application that continuously reads audio from `SoundPusher Audio` (or any other suitable) device, encodes it into a compressed format, and then sends that compressed stream to a (hopefully) real sound device's digital output stream. This is controlled through its menu bar extra.
 
 Once the driver is installed and `SoundPusher` running, you should be able to select the desired combination of supported input and digital output devices (which will forward any sound output from the input device to the designated digital output). `SoundPusher` will set the default output device to the selected input device (e.g. `SoundPusher Audio`) if it was previously set to the device used for digital output.
 
 You can override the default IOCycle timing adjustment (which attempts to postpone the encoding to as late as possible to just before the hardware needs the next packet) in case you notice sound drop-outs or overloads. The default is a safety-factor of 8. This is done via `defaults write de.maven.SoundPusher IOCycleSafetyFactor -float <value>`. Any value less than 1 disables IOCycle adjustment altogether, which means that CoreAudio starts preparing the next packet roughly when the current packet is sent to the hardware (which is usually a bit of a waste as current hardware can easily encode 100x faster than real-time).
+
+You can also switch back to the old rear channel upmixing with `defaults write de.maven.SoundPusher UpmixDPLiiRear -bool NO`.
 
 ## Contact & Support
 Please report any issues on [GitHub](https://github.com/q-p/SoundPusher).
@@ -49,3 +52,4 @@ This software is built on the experience of others:
 - `SoundPusherAudio` (formerly known as `LoopbackAudio`) is based on the `NullAudio` user-space driver provided by Apple as example code.
 - [TPCircularBuffer](https://github.com/michaeltyson/TPCircularBuffer/) by Michael Tyson is used to move audio and packet data around.
 - [FFmpeg](http://www.ffmpeg.org) is used to encode to compressed formats and then mux those packets into an `SPDIF` compliant bit-stream.
+- [Joseph Lyncheski's Core Audio Tap example](https://gist.github.com/directmusic/7d653806c24fe5bb8166d12a9f4422de)
