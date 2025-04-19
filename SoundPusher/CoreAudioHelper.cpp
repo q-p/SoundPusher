@@ -181,30 +181,29 @@ void SetStreamsEnabled(const AudioObjectID device, const AudioDeviceIOProcID IOP
 static const AudioObjectPropertyAddress DefaultDeviceAddress = {kAudioHardwarePropertyDefaultOutputDevice, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain};
 
 DefaultDeviceChanger::DefaultDeviceChanger()
-: _originalDevice(-1)
+: _originalDevice(kAudioObjectUnknown)
 { }
 
-DefaultDeviceChanger::DefaultDeviceChanger(const AudioObjectID claimedDevice, const AudioObjectID alternativeDevice,
+DefaultDeviceChanger::DefaultDeviceChanger(const AudioObjectID newDefaultDevice,
   DefaultDeviceChanger *oldDefaultDevice)
-: _originalDevice(-1)
+: _originalDevice(kAudioObjectUnknown)
 {
   if (oldDefaultDevice && oldDefaultDevice->HasDevice())
     *this = std::move(*oldDefaultDevice); // transfer to us
   else
   {
-    AudioObjectID defaultDevice = -1;
+    AudioObjectID defaultDevice = kAudioObjectUnknown;
     UInt32 dataSize = sizeof defaultDevice;
     const OSStatus status = AudioObjectGetPropertyData(kAudioObjectSystemObject, &DefaultDeviceAddress, 0, NULL, &dataSize, &defaultDevice);
     if (status != noErr)
       throw CoreAudioException("DefaultDeviceChanger::DefaultDeviceChanger(): AudioObjectGetPropertyData()", status);
-    if (defaultDevice == claimedDevice)
-      _originalDevice = defaultDevice;
+    _originalDevice = defaultDevice;
   }
 
-  if (_originalDevice)
+  if (_originalDevice != kAudioObjectUnknown)
   { // the default device is the one we're about to claim, so let's try to change it to the provided alternative
-    UInt32 dataSize = sizeof alternativeDevice;
-    const OSStatus status = AudioObjectSetPropertyData(kAudioObjectSystemObject, &DefaultDeviceAddress, 0, NULL, dataSize, &alternativeDevice);
+    UInt32 dataSize = sizeof newDefaultDevice;
+    const OSStatus status = AudioObjectSetPropertyData(kAudioObjectSystemObject, &DefaultDeviceAddress, 0, NULL, dataSize, &newDefaultDevice);
     if (status != noErr)
     {
       os_log(OS_LOG_DEFAULT, "Could not change default device: %s", Get4CCAsString(status).c_str());
@@ -215,7 +214,7 @@ DefaultDeviceChanger::DefaultDeviceChanger(const AudioObjectID claimedDevice, co
 
 static void AttemptDefaultDeviceRestore(const AudioObjectID device)
 {
-  if (device != -1)
+  if (device != kAudioObjectUnknown)
   { // attempt to restore default device
     // if we do this directly, it mostly gets lost...
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -231,7 +230,7 @@ DefaultDeviceChanger &DefaultDeviceChanger::operator=(DefaultDeviceChanger &&oth
 {
   AttemptDefaultDeviceRestore(_originalDevice);
   _originalDevice = other._originalDevice;
-  other._originalDevice = -1;
+  other._originalDevice = kAudioObjectUnknown;
   return *this;
 }
 

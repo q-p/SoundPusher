@@ -34,11 +34,10 @@ void SetStreamsEnabled(const AudioObjectID device, const AudioDeviceIOProcID IOP
 struct DefaultDeviceChanger
 {
   DefaultDeviceChanger();
-  DefaultDeviceChanger(const AudioObjectID claimedDevice, const AudioObjectID alternativeDevice,
-    DefaultDeviceChanger *oldDefaultDevice = nullptr);
+  DefaultDeviceChanger(const AudioObjectID newDefaultDevice, DefaultDeviceChanger *oldDefaultDevice = nullptr);
   DefaultDeviceChanger &operator=(DefaultDeviceChanger &&other);
   ~DefaultDeviceChanger();
-  bool HasDevice() const { return _originalDevice != -1; }
+  bool HasDevice() const { return _originalDevice != kAudioObjectUnknown; }
 protected:
   AudioObjectID _originalDevice;
 };

@@ -155,7 +155,7 @@ struct ForwardingChain
     AudioObjectID outDevice, AudioObjectID outStream, const AudioStreamBasicDescription &outFormat,
     const AudioChannelLayoutTag channelLayoutTag, CAHelper::DefaultDeviceChanger *oldDefaultDevice = nullptr)
   : _identifier(identifier)
-  , _defaultDevice(outDevice, inDevice._device, oldDefaultDevice)
+  , _defaultDevice(inDevice._device, oldDefaultDevice)
   , _output(outDevice, outStream, outFormat, channelLayoutTag,
       [[NSUserDefaults standardUserDefaults] boolForKey:@"UpmixDPLiiRear"])
   , _tappedDevice(AudioTap(inDevice._uid, inStream._streamIndexOnDevice))
