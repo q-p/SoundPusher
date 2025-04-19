@@ -23,14 +23,13 @@ AudioTap::AudioTap(NSString *deviceUID, const NSInteger streamIndex)
   CATapDescription *tapConfig = [[CATapDescription alloc] initExcludingProcesses:@[] andDeviceUID:_deviceUID withStream:streamIndex];
 
   tapConfig.privateTap = YES;
-  tapConfig.muteBehavior = CATapUnmuted;
+  tapConfig.muteBehavior = CATapMutedWhenTapped;
   tapConfig.name = [NSString stringWithFormat:@"SoundPusher Tap for '%@'", deviceUID];
 
   OSStatus status = AudioHardwareCreateProcessTap(tapConfig, &_tap);
   if (status != noErr)
     throw CAHelper::CoreAudioException("AudioHardwareCreateProcessTap()", status);
   _tapUID = CFBridgingRelease(CAHelper::GetStringProperty(_tap, TapUIDAddress));
-
 }
 
 AudioTap::AudioTap(AudioTap &&other)
@@ -47,23 +46,25 @@ AudioTap::~AudioTap()
     AudioHardwareDestroyProcessTap(_tap);
 }
 
-AggregateTappedDevice::AggregateTappedDevice(AudioTap &&audioTap)
+AggregateTappedDevice::AggregateTappedDevice(AudioTap &&audioTap, const bool enableDriftCompensation)
 : _audioTap(std::move(audioTap))
 {
   NSDictionary *dict = @{
     @kAudioAggregateDeviceUIDKey : [NSString stringWithFormat:@"%@%@", kAggregateDeviceUIDPrefix, _audioTap._deviceUID],
     @kAudioAggregateDeviceNameKey : [NSString stringWithFormat:@"SoundPusher Aggregate for '%@'", _audioTap._deviceUID],
-    @kAudioAggregateDeviceMainSubDeviceKey : _audioTap._deviceUID,
-    @kAudioAggregateDeviceSubDeviceListKey : @[
-      @{
-        @kAudioSubDeviceUIDKey : _audioTap._deviceUID,
-      },
-    ],
+    // it seems we only need the tap, not the actual device in there
+//    @kAudioAggregateDeviceMainSubDeviceKey : _audioTap._deviceUID,
+//    @kAudioAggregateDeviceSubDeviceListKey : @[
+//      @{
+//        @kAudioSubDeviceUIDKey : _audioTap._deviceUID,
+//      },
+//    ],
     @kAudioAggregateDeviceIsPrivateKey : @YES,
     @kAudioAggregateDeviceTapListKey : @[
       @{
         @kAudioSubTapUIDKey : _audioTap._tapUID,
-        @kAudioSubTapDriftCompensationKey : @YES,
+        // since we only have a single device, drift compensation seems pointless?
+        @kAudioSubTapDriftCompensationKey : [NSNumber numberWithBool:enableDriftCompensation],
       },
     ],
 //    @kAudioAggregateDeviceTapAutoStartKey : @YES,

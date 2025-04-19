@@ -156,9 +156,10 @@ struct ForwardingChain
     const AudioChannelLayoutTag channelLayoutTag, CAHelper::DefaultDeviceChanger *oldDefaultDevice = nullptr)
   : _identifier(identifier)
   , _defaultDevice(inDevice._device, oldDefaultDevice)
+  , _tappedDevice(AudioTap(inDevice._uid, inStream._streamIndexOnDevice),
+      [[NSUserDefaults standardUserDefaults] objectForKey:@"TapDriftCompensation"])
   , _output(outDevice, outStream, outFormat, channelLayoutTag,
       [[NSUserDefaults standardUserDefaults] boolForKey:@"UpmixDPLiiRear"])
-  , _tappedDevice(AudioTap(inDevice._uid, inStream._streamIndexOnDevice))
   , _input(_tappedDevice._aggregateDevice, 0, _output)
   {
     OSStatus status = AudioObjectAddPropertyListener(_output._device, &DeviceAliveAddress, DeviceAliveListenerFunc, this);
@@ -182,8 +183,8 @@ struct ForwardingChain
 
   ForwardingChainIdentifier *_identifier;
   CAHelper::DefaultDeviceChanger _defaultDevice;
-  DigitalOutputContext _output;
   AggregateTappedDevice _tappedDevice;
+  DigitalOutputContext _output;
   ForwardingInputTap _input;
 };
 
@@ -529,6 +530,7 @@ static void AttemptToStartMissingChains(CAHelper::DefaultDeviceChanger *defaultD
     @"Upmix" : [NSNumber numberWithBool:NO],
     @"UpmixDPLiiRear" : [NSNumber numberWithBool:YES],
     @"IOCycleSafetyFactor" : [NSNumber numberWithDouble:8.0],
+    @"TapDriftCompensation" : [NSNumber numberWithBool:NO],
     @"ActiveChains" : @[]
   }];
 

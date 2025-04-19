@@ -145,7 +145,7 @@ void DigitalOutputContext::Stop()
 {
   if (!_isRunning)
     return;
-  // reset on stop, because an forwarding tap may re-start before we do (and thus have a chance to reset it).
+  // reset on stop, because a forwarding tap may re-start before we do (and thus have a chance to reset it).
   OSStatus status = AudioDeviceStop(_device, _deviceIOProcID);
   if (status != noErr)
     throw CAHelper::CoreAudioException("DigitalOutputContext::Stop(): AudioDeviceStop()", status);
@@ -158,6 +158,7 @@ OSStatus DigitalOutputContext::DeviceIOProcFunc(AudioObjectID inDevice, const Au
 {
   DigitalOutputContext *me = static_cast<DigitalOutputContext *>(inClientData);
   assert(outOutputData->mNumberBuffers == 1);
+  assert(outOutputData->mBuffers[0].mDataByteSize >= me->_format.mBytesPerPacket);
 
   const auto numInputFramesRequired = me->GetNumFramesPerPacket(); // or derive from output buffer size
   const auto numInputFramesDesired = numInputFramesRequired + me->_numSafeFrames;

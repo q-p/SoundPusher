@@ -69,10 +69,8 @@ OSStatus ForwardingInputTap::DeviceIOProcFunc(AudioObjectID inDevice, const Audi
 {
   ForwardingInputTap *me = static_cast<ForwardingInputTap *>(inClientData);
   auto numBuffers = inInputData->mNumberBuffers;
-  assert(numBuffers > 0);
-  // we may have inputs in the aggregate device, so we assume the tap is the final input
-  const auto bufIdx = numBuffers > 0 ? numBuffers - 1 : decltype(numBuffers){0};
-  const auto &buffer = inInputData->mBuffers[bufIdx];
+  assert(numBuffers == 1);
+  const auto &buffer = inInputData->mBuffers[0];
   assert(buffer.mNumberChannels == me->_format.mChannelsPerFrame);
   const float *input = static_cast<const float *>(buffer.mData);
   const uint32_t available = buffer.mDataByteSize / (me->_format.mChannelsPerFrame * sizeof *input);

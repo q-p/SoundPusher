@@ -26,7 +26,7 @@ struct AudioTap
 /// RAII class wrapping an aggregate device containing a "real" device and a tap for it.
 struct AggregateTappedDevice
 {
-  AggregateTappedDevice(AudioTap &&audioTap);
+  AggregateTappedDevice(AudioTap &&audioTap, bool enableDriftCompensation);
   ~AggregateTappedDevice();
   AggregateTappedDevice(AggregateTappedDevice &&) = delete; // non-copyable, non-movable
 

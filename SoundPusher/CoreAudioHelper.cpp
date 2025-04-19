@@ -119,7 +119,7 @@ std::vector<AudioObjectID> GetStreams(const AudioObjectID device, const bool inp
   if (!streams.empty())
   {
     UInt32 dataSize = static_cast<UInt32>(streams.size() * sizeof *streams.data());
-    OSStatus status = status = AudioObjectGetPropertyData(device, &streamsAddress, 0, NULL, &dataSize, streams.data());
+    OSStatus status = AudioObjectGetPropertyData(device, &streamsAddress, 0, NULL, &dataSize, streams.data());
     if (status != noErr)
       throw CoreAudioException("GetStreams(): AudioObjectGetPropertyData()", status);
     streams.resize(dataSize / sizeof streams.front()); // may not have returned full buffer
