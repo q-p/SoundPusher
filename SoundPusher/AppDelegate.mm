@@ -575,12 +575,15 @@ static void AttemptToStartMissingChains(CAHelper::DefaultDeviceChanger *defaultD
 
   _audioInputAuthorizationStatus = GetAudioInputAuthorizationStatus();
 
-  AttemptToStartMissingChains();
-
   [[[NSWorkspace sharedWorkspace] notificationCenter] addObserver:self selector:@selector(receiveSleepNote:)
     name:NSWorkspaceWillSleepNotification object:NULL];
   [[[NSWorkspace sharedWorkspace] notificationCenter] addObserver:self selector:@selector(receiveWakeNote:)
     name:NSWorkspaceDidWakeNotification object:NULL];
+
+  // our acquiring of the box with our device may have posted some messages, so process those messages first
+  dispatch_async(dispatch_get_main_queue(), ^{
+    AttemptToStartMissingChains();
+  });
 }
 
 - (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication *)sender
