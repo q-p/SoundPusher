@@ -12,7 +12,8 @@
 #include <vector>
 #include <string>
 #include <stdexcept>
-#include "CoreAudio/CoreAudio.h"
+
+#include <CoreAudio/CoreAudio.h>
 
 namespace CAHelper {
 
@@ -63,6 +64,16 @@ protected:
   AudioObjectID _stream;
   AudioStreamBasicDescription _originalFormat;
   bool _didChange;
+};
+
+/// RAII class for unhiding (and re-hiding) a box containing our device
+struct DeviceBoxAcquirer
+{
+  explicit DeviceBoxAcquirer(CFStringRef boxUID);
+  DeviceBoxAcquirer(DeviceBoxAcquirer &&) = delete; // non-copyable, non-movable
+  ~DeviceBoxAcquirer();
+protected:
+  AudioObjectID _box;
 };
 
 } // end namespace CAHelper

@@ -6,13 +6,13 @@
 //
 //
 
+#include "CoreAudioHelper.hpp"
+
 #include <cstring>
 #include <cctype>
 #include <memory>
 
 #include <os/log.h>
-
-#include "CoreAudioHelper.hpp"
 
 
 namespace CAHelper {
@@ -327,6 +327,51 @@ FormatSetter::~FormatSetter()
     os_log(OS_LOG_DEFAULT, "Could not restore original format on stream %u %s", _stream, Get4CCAsString(status).c_str());
     return;
   }
+}
+
+//==================================================================================================
+#pragma mark -
+#pragma mark DeviceBoxAcquirer
+//==================================================================================================
+
+static const AudioObjectPropertyAddress BoxForUIDAddress = {kAudioHardwarePropertyTranslateUIDToBox, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain};
+static const AudioObjectPropertyAddress BoxAcquiredAddress = {kAudioBoxPropertyAcquired, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain};
+
+DeviceBoxAcquirer::DeviceBoxAcquirer(CFStringRef boxUID)
+: _box(kAudioDeviceUnknown)
+{
+  OSStatus status = 0;
+  UInt32 dataSize = 0;
+
+  dataSize = sizeof _box;
+  status = AudioObjectGetPropertyData(kAudioObjectSystemObject, &BoxForUIDAddress, sizeof boxUID, &boxUID, &dataSize, &_box);
+  if (status != noErr)
+  {
+    _box = kAudioDeviceUnknown;
+    os_log(OS_LOG_DEFAULT, "Could not acquire box for '%@': %s", boxUID, Get4CCAsString(status).c_str());
+    return;
+  }
+
+  const UInt32 isAcquired = 1;
+  dataSize = sizeof isAcquired;
+  status = AudioObjectSetPropertyData(_box, &BoxAcquiredAddress, 0, NULL, dataSize, &isAcquired);
+  if (status != noErr)
+    throw CoreAudioException("DeviceBoxAcquirer: AudioObjectSetPropertyData(BoxAcquired) failed", status);
+}
+
+DeviceBoxAcquirer::~DeviceBoxAcquirer()
+{
+  if (_box == kAudioDeviceUnknown)
+    return;
+
+  OSStatus status = 0;
+  UInt32 dataSize = 0;
+
+  const UInt32 isAcquired = 0;
+  dataSize = sizeof isAcquired;
+  status = AudioObjectSetPropertyData(_box, &BoxAcquiredAddress, 0, NULL, dataSize, &isAcquired);
+  if (status != noErr)
+    os_log(OS_LOG_DEFAULT, "Could not unacquire box %u: %s", _box, Get4CCAsString(status).c_str());
 }
 
 } // end namespace

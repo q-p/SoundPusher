@@ -8,8 +8,9 @@
 
 #import "AppDelegate.h"
 
-#include <memory>
 #include <algorithm>
+#include <memory>
+#include <optional>
 
 extern "C" {
 #include "libavcodec/avcodec.h"
@@ -189,6 +190,7 @@ struct ForwardingChain
 };
 
 
+std::optional<CAHelper::DeviceBoxAcquirer> _deviceBoxAcquirer;
 // our status menu item
 NSStatusItem *_statusItem = nil;
 // the list of chains which we want to be active (but which may not be, e.g. due to disconnected devices etc).
@@ -550,6 +552,9 @@ static void AttemptToStartMissingChains(CAHelper::DefaultDeviceChanger *defaultD
     }
   }
 
+  // if our plugin is present, let's acquire the box (i.e. make the device show up)
+  _deviceBoxAcquirer.emplace(CFSTR(kBox_UID));
+
   _numOriginalMenuItems = self.statusItemMenu.numberOfItems; // so we know how many to keep when updating the menu
 
   _upmixMenuItem.state = _enableUpmix ? NSControlStateValueOn : NSControlStateValueOff;
@@ -596,6 +601,7 @@ static void AttemptToStartMissingChains(CAHelper::DefaultDeviceChanger *defaultD
 {
   [[[NSWorkspace sharedWorkspace] notificationCenter] removeObserver:self];
   [_statusItem.statusBar removeStatusItem:_statusItem];
+  _deviceBoxAcquirer.reset(); // re-hide
 }
 
 @end

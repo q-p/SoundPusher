@@ -88,8 +88,9 @@
 enum
 {
 	kObjectID_PlugIn					= kAudioObjectPlugInObject,
-	kObjectID_Device					= 2,
-	kObjectID_Stream_Output				= 3,
+	kObjectID_Box						= 2,
+	kObjectID_Device					= 3,
+	kObjectID_Stream_Output				= 4,
 };
 
 enum
@@ -112,12 +113,8 @@ enum
 	kNumSupportedSampleRates	= sizeof kSupportedSampleRates / sizeof *kSupportedSampleRates,
 
 	// The size of the imaginary ring-buffer used purely for timing purposes (but which has an impact on
-	// what IO size CoreAudio chooses)
-	kDevice_NumZeroFrames		= 2048,
-
-	// The size of the *actual* ring-buffer in frames
-	// The size of this is independent of the imaginary hardware ring-buffer providing zero time-stamps
-	kDevice_RingBuffNumFrames	= kDevice_NumZeroFrames,
+	// what IO size CoreAudio chooses). Matches the frames in an AC3 packet.
+	kDevice_NumZeroFrames		= 1536,
 };
 
 //	Declare the stuff that tracks the state of the plug-in, the device and its sub-objects.
@@ -146,6 +143,7 @@ typedef struct
 	UInt64						AnchorHostTime;
 	UInt64						TimeLineSeed;
 
+	bool						Box_IsAcquired;
 	bool						Stream_Output_IsActive;
 } Device;
 
@@ -174,6 +172,7 @@ static Device gDevice = {
 	.AnchorSampleTime			= 0.0,
 	.AnchorHostTime				= 0,
 	.TimeLineSeed				= 1,
+	.Box_IsAcquired				= false,
 	.Stream_Output_IsActive		= true,
 };
 
@@ -317,6 +316,12 @@ static OSStatus		SoundPusherAudio_IsPlugInPropertySettable(AudioServerPlugInDriv
 static OSStatus		SoundPusherAudio_GetPlugInPropertyDataSize(AudioServerPlugInDriverRef inDriver, AudioObjectID inObjectID, pid_t inClientProcessID, const AudioObjectPropertyAddress* inAddress, UInt32 inQualifierDataSize, const void* inQualifierData, UInt32* outDataSize);
 static OSStatus		SoundPusherAudio_GetPlugInPropertyData(AudioServerPlugInDriverRef inDriver, AudioObjectID inObjectID, pid_t inClientProcessID, const AudioObjectPropertyAddress* inAddress, UInt32 inQualifierDataSize, const void* inQualifierData, UInt32 inDataSize, UInt32* outDataSize, void* outData);
 static OSStatus		SoundPusherAudio_SetPlugInPropertyData(AudioServerPlugInDriverRef inDriver, AudioObjectID inObjectID, pid_t inClientProcessID, const AudioObjectPropertyAddress* inAddress, UInt32 inQualifierDataSize, const void* inQualifierData, UInt32 inDataSize, const void* inData, UInt32* outNumberPropertiesChanged, AudioObjectPropertyAddress outChangedAddresses[2]);
+
+static Boolean		SoundPusherAudio_HasBoxProperty(AudioServerPlugInDriverRef inDriver, AudioObjectID inObjectID, pid_t inClientProcessID, const AudioObjectPropertyAddress* inAddress);
+static OSStatus		SoundPusherAudio_IsBoxPropertySettable(AudioServerPlugInDriverRef inDriver, AudioObjectID inObjectID, pid_t inClientProcessID, const AudioObjectPropertyAddress* inAddress, Boolean* outIsSettable);
+static OSStatus		SoundPusherAudio_GetBoxPropertyDataSize(AudioServerPlugInDriverRef inDriver, AudioObjectID inObjectID, pid_t inClientProcessID, const AudioObjectPropertyAddress* inAddress, UInt32 inQualifierDataSize, const void* inQualifierData, UInt32* outDataSize);
+static OSStatus		SoundPusherAudio_GetBoxPropertyData(AudioServerPlugInDriverRef inDriver, AudioObjectID inObjectID, pid_t inClientProcessID, const AudioObjectPropertyAddress* inAddress, UInt32 inQualifierDataSize, const void* inQualifierData, UInt32 inDataSize, UInt32* outDataSize, void* outData);
+static OSStatus		SoundPusherAudio_SetBoxPropertyData(AudioServerPlugInDriverRef inDriver, AudioObjectID inObjectID, pid_t inClientProcessID, const AudioObjectPropertyAddress* inAddress, UInt32 inQualifierDataSize, const void* inQualifierData, UInt32 inDataSize, const void* inData, UInt32* outNumberPropertiesChanged, AudioObjectPropertyAddress outChangedAddresses[2]);
 
 static Boolean		SoundPusherAudio_HasDeviceProperty(AudioServerPlugInDriverRef inDriver, AudioObjectID inObjectID, pid_t inClientProcessID, const AudioObjectPropertyAddress* inAddress);
 static OSStatus		SoundPusherAudio_IsDevicePropertySettable(AudioServerPlugInDriverRef inDriver, AudioObjectID inObjectID, pid_t inClientProcessID, const AudioObjectPropertyAddress* inAddress, Boolean* outIsSettable);
@@ -692,6 +697,10 @@ static Boolean	SoundPusherAudio_HasProperty(AudioServerPlugInDriverRef inDriver,
 			theAnswer = SoundPusherAudio_HasPlugInProperty(inDriver, inObjectID, inClientProcessID, inAddress);
 			break;
 		
+		case kObjectID_Box:
+			theAnswer = SoundPusherAudio_HasBoxProperty(inDriver, inObjectID, inClientProcessID, inAddress);
+			break;
+		
 		case kObjectID_Device:
 			theAnswer = SoundPusherAudio_HasDeviceProperty(inDriver, inObjectID, inClientProcessID, inAddress);
 			break;
@@ -725,6 +734,10 @@ static OSStatus	SoundPusherAudio_IsPropertySettable(AudioServerPlugInDriverRef i
 	{
 		case kObjectID_PlugIn:
 			theAnswer = SoundPusherAudio_IsPlugInPropertySettable(inDriver, inObjectID, inClientProcessID, inAddress, outIsSettable);
+			break;
+		
+		case kObjectID_Box:
+			theAnswer = SoundPusherAudio_IsBoxPropertySettable(inDriver, inObjectID, inClientProcessID, inAddress, outIsSettable);
 			break;
 		
 		case kObjectID_Device:
@@ -763,6 +776,10 @@ static OSStatus	SoundPusherAudio_GetPropertyDataSize(AudioServerPlugInDriverRef 
 	{
 		case kObjectID_PlugIn:
 			theAnswer = SoundPusherAudio_GetPlugInPropertyDataSize(inDriver, inObjectID, inClientProcessID, inAddress, inQualifierDataSize, inQualifierData, outDataSize);
+			break;
+		
+		case kObjectID_Box:
+			theAnswer = SoundPusherAudio_GetBoxPropertyDataSize(inDriver, inObjectID, inClientProcessID, inAddress, inQualifierDataSize, inQualifierData, outDataSize);
 			break;
 		
 		case kObjectID_Device:
@@ -804,6 +821,10 @@ static OSStatus	SoundPusherAudio_GetPropertyData(AudioServerPlugInDriverRef inDr
 			theAnswer = SoundPusherAudio_GetPlugInPropertyData(inDriver, inObjectID, inClientProcessID, inAddress, inQualifierDataSize, inQualifierData, inDataSize, outDataSize, outData);
 			break;
 		
+		case kObjectID_Box:
+			theAnswer = SoundPusherAudio_GetBoxPropertyData(inDriver, inObjectID, inClientProcessID, inAddress, inQualifierDataSize, inQualifierData, inDataSize, outDataSize, outData);
+			break;
+		
 		case kObjectID_Device:
 			theAnswer = SoundPusherAudio_GetDevicePropertyData(inDriver, inObjectID, inClientProcessID, inAddress, inQualifierDataSize, inQualifierData, inDataSize, outDataSize, outData);
 			break;
@@ -839,6 +860,10 @@ static OSStatus	SoundPusherAudio_SetPropertyData(AudioServerPlugInDriverRef inDr
 	{
 		case kObjectID_PlugIn:
 			theAnswer = SoundPusherAudio_SetPlugInPropertyData(inDriver, inObjectID, inClientProcessID, inAddress, inQualifierDataSize, inQualifierData, inDataSize, inData, &theNumberPropertiesChanged, theChangedAddresses);
+			break;
+		
+		case kObjectID_Box:
+			theAnswer = SoundPusherAudio_SetBoxPropertyData(inDriver, inObjectID, inClientProcessID, inAddress, inQualifierDataSize, inQualifierData, inDataSize, inData, &theNumberPropertiesChanged, theChangedAddresses);
 			break;
 		
 		case kObjectID_Device:
@@ -891,6 +916,8 @@ static Boolean	SoundPusherAudio_HasPlugInProperty(AudioServerPlugInDriverRef inD
 		case kAudioObjectPropertyOwner:
 		case kAudioObjectPropertyManufacturer:
 		case kAudioObjectPropertyOwnedObjects:
+		case kAudioPlugInPropertyBoxList:
+		case kAudioPlugInPropertyTranslateUIDToBox:
 		case kAudioPlugInPropertyDeviceList:
 		case kAudioPlugInPropertyTranslateUIDToDevice:
 		case kAudioPlugInPropertyResourceBundle:
@@ -928,6 +955,8 @@ static OSStatus	SoundPusherAudio_IsPlugInPropertySettable(AudioServerPlugInDrive
 		case kAudioObjectPropertyOwner:
 		case kAudioObjectPropertyManufacturer:
 		case kAudioObjectPropertyOwnedObjects:
+		case kAudioPlugInPropertyBoxList:
+		case kAudioPlugInPropertyTranslateUIDToBox:
 		case kAudioPlugInPropertyDeviceList:
 		case kAudioPlugInPropertyTranslateUIDToDevice:
 		case kAudioPlugInPropertyResourceBundle:
@@ -980,8 +1009,23 @@ static OSStatus	SoundPusherAudio_GetPlugInPropertyDataSize(AudioServerPlugInDriv
 			break;
 			
 		case kAudioObjectPropertyOwnedObjects:
-		case kAudioPlugInPropertyDeviceList:
+			pthread_mutex_lock(&gDevice.Mutex);
+			*outDataSize = gDevice.Box_IsAcquired ? 2 * sizeof(AudioObjectID) : sizeof(AudioObjectID) ;
+			pthread_mutex_unlock(&gDevice.Mutex);
+			break;
+			
+		case kAudioPlugInPropertyBoxList:
 			*outDataSize = sizeof(AudioClassID);
+			break;
+			
+		case kAudioPlugInPropertyTranslateUIDToBox:
+			*outDataSize = sizeof(AudioObjectID);
+			break;
+			
+		case kAudioPlugInPropertyDeviceList:
+			pthread_mutex_lock(&gDevice.Mutex);
+			*outDataSize = gDevice.Box_IsAcquired ? sizeof(AudioObjectID) : 0;
+			pthread_mutex_unlock(&gDevice.Mutex);
 			break;
 			
 		case kAudioPlugInPropertyTranslateUIDToDevice:
@@ -1052,15 +1096,41 @@ static OSStatus	SoundPusherAudio_GetPlugInPropertyData(AudioServerPlugInDriverRe
 			break;
 			
 		case kAudioObjectPropertyOwnedObjects:
-			//	This returns the objects directly owned by the object. In the case of the
-			//	plug-in object it is the same as the device list.
-		case kAudioPlugInPropertyDeviceList:
 			//	Calculate the number of items that have been requested. Note that this
 			//	number is allowed to be smaller than the actual size of the list. In such
 			//	case, only that number of items will be returned
 			theNumberItemsToFetch = inDataSize / sizeof(AudioObjectID);
 			
-			//	Clamp that to the number of devices this driver implements (which is just 1)
+			//	Clamp that to the number of boxes this driver implements (which is just 1)
+			pthread_mutex_lock(&gDevice.Mutex);
+			if(theNumberItemsToFetch > (gDevice.Box_IsAcquired ? 2 : 1))
+			{
+				theNumberItemsToFetch = (gDevice.Box_IsAcquired ? 2 : 1);
+			}
+			pthread_mutex_unlock(&gDevice.Mutex);
+			
+			//	Write the devices' object IDs into the return value
+			if(theNumberItemsToFetch > 1)
+			{
+				((AudioObjectID*)outData)[0] = kObjectID_Box;
+				((AudioObjectID*)outData)[0] = kObjectID_Device;
+			}
+			else if(theNumberItemsToFetch > 0)
+			{
+				((AudioObjectID*)outData)[0] = kObjectID_Box;
+			}
+			
+			//	Return how many bytes we wrote to
+			*outDataSize = theNumberItemsToFetch * sizeof(AudioClassID);
+			break;
+			
+		case kAudioPlugInPropertyBoxList:
+			//	Calculate the number of items that have been requested. Note that this
+			//	number is allowed to be smaller than the actual size of the list. In such
+			//	case, only that number of items will be returned
+			theNumberItemsToFetch = inDataSize / sizeof(AudioObjectID);
+			
+			//	Clamp that to the number of boxes this driver implements (which is just 1)
 			if(theNumberItemsToFetch > 1)
 			{
 				theNumberItemsToFetch = 1;
@@ -1069,9 +1139,54 @@ static OSStatus	SoundPusherAudio_GetPlugInPropertyData(AudioServerPlugInDriverRe
 			//	Write the devices' object IDs into the return value
 			if(theNumberItemsToFetch > 0)
 			{
+				((AudioObjectID*)outData)[0] = kObjectID_Box;
+			}
+			
+			//	Return how many bytes we wrote to
+			*outDataSize = theNumberItemsToFetch * sizeof(AudioClassID);
+			break;
+			
+		case kAudioPlugInPropertyTranslateUIDToBox:
+			//	This property takes the CFString passed in the qualifier and converts that
+			//	to the object ID of the box it corresponds to. For this driver, there is
+			//	just the one box. Note that it is not an error if the string in the
+			//	qualifier doesn't match any devices. In such case, kAudioObjectUnknown is
+			//	the object ID to return.
+			FailWithAction(inDataSize < sizeof(AudioObjectID), theAnswer = kAudioHardwareBadPropertySizeError, Done, "SoundPusherAudio_GetPlugInPropertyData: not enough space for the return value of kAudioPlugInPropertyTranslateUIDToBox");
+			FailWithAction(inQualifierDataSize != sizeof(CFStringRef), theAnswer = kAudioHardwareBadPropertySizeError, Done, "SoundPusherAudio_GetPlugInPropertyData: the qualifier is the wrong size for kAudioPlugInPropertyTranslateUIDToBox");
+			FailWithAction(inQualifierData == NULL, theAnswer = kAudioHardwareBadPropertySizeError, Done, "SoundPusherAudio_GetPlugInPropertyData: no qualifier for kAudioPlugInPropertyTranslateUIDToBox");
+			if(CFStringCompare(*((CFStringRef*)inQualifierData), CFSTR(kBox_UID), 0) == kCFCompareEqualTo)
+			{
+				*((AudioObjectID*)outData) = kObjectID_Box;
+			}
+			else
+			{
+				*((AudioObjectID*)outData) = kAudioObjectUnknown;
+			}
+			*outDataSize = sizeof(AudioObjectID);
+			break;
+			
+		case kAudioPlugInPropertyDeviceList:
+			//	Calculate the number of items that have been requested. Note that this
+			//	number is allowed to be smaller than the actual size of the list. In such
+			//	case, only that number of items will be returned
+			theNumberItemsToFetch = inDataSize / sizeof(AudioObjectID);
+			
+			//	Clamp that to the number of devices this driver implements (which is just 1 if the
+			//	box has been acquired)
+			pthread_mutex_lock(&gDevice.Mutex);
+			if(theNumberItemsToFetch > (gDevice.Box_IsAcquired ? 1 : 0))
+			{
+				theNumberItemsToFetch = (gDevice.Box_IsAcquired ? 1 : 0);
+			}
+			pthread_mutex_unlock(&gDevice.Mutex);
+			
+			//	Write the devices' object IDs into the return value
+			if(theNumberItemsToFetch > 0)
+			{
 				((AudioObjectID*)outData)[0] = kObjectID_Device;
 			}
-
+			
 			//	Return how many bytes we wrote to
 			*outDataSize = theNumberItemsToFetch * sizeof(AudioClassID);
 			break;
@@ -1136,6 +1251,419 @@ static OSStatus	SoundPusherAudio_SetPlugInPropertyData(AudioServerPlugInDriverRe
 	//	property in the SoundPusherAudio_GetPlugInPropertyData() method.
 	switch(inAddress->mSelector)
 	{
+		default:
+			theAnswer = kAudioHardwareUnknownPropertyError;
+			break;
+	};
+
+Done:
+	return theAnswer;
+}
+
+#pragma mark Box Property Operations
+
+static Boolean	SoundPusherAudio_HasBoxProperty(AudioServerPlugInDriverRef inDriver, AudioObjectID inObjectID, pid_t inClientProcessID, const AudioObjectPropertyAddress* inAddress)
+{
+	//	This method returns whether or not the box object has the given property.
+	
+	#pragma unused(inClientProcessID)
+	
+	//	declare the local variables
+	Boolean theAnswer = false;
+	
+	//	check the arguments
+	FailIf(inDriver != gAudioServerPlugInDriverRef, Done, "SoundPusherAudio_HasBoxProperty: bad driver reference");
+	FailIf(inAddress == NULL, Done, "SoundPusherAudio_HasBoxProperty: no address");
+	FailIf(inObjectID != kObjectID_Box, Done, "SoundPusherAudio_HasBoxProperty: not the box object");
+	
+	//	Note that for each object, this driver implements all the required properties plus a few
+	//	extras that are useful but not required. There is more detailed commentary about each
+	//	property in the SoundPusherAudio_GetBoxPropertyData() method.
+	switch(inAddress->mSelector)
+	{
+		case kAudioObjectPropertyBaseClass:
+		case kAudioObjectPropertyClass:
+		case kAudioObjectPropertyOwner:
+		case kAudioObjectPropertyName:
+		case kAudioObjectPropertyModelName:
+		case kAudioObjectPropertyManufacturer:
+		case kAudioObjectPropertyOwnedObjects:
+		case kAudioBoxPropertyBoxUID:
+		case kAudioBoxPropertyTransportType:
+		case kAudioBoxPropertyHasAudio:
+		case kAudioBoxPropertyHasVideo:
+		case kAudioBoxPropertyHasMIDI:
+		case kAudioBoxPropertyIsProtected:
+		case kAudioBoxPropertyAcquired:
+		case kAudioBoxPropertyAcquisitionFailed:
+		case kAudioBoxPropertyDeviceList:
+			theAnswer = true;
+			break;
+	};
+
+Done:
+	return theAnswer;
+}
+
+static OSStatus	SoundPusherAudio_IsBoxPropertySettable(AudioServerPlugInDriverRef inDriver, AudioObjectID inObjectID, pid_t inClientProcessID, const AudioObjectPropertyAddress* inAddress, Boolean* outIsSettable)
+{
+	//	This method returns whether or not the given property on the plug-in object can have its
+	//	value changed.
+	
+	#pragma unused(inClientProcessID)
+	
+	//	declare the local variables
+	OSStatus theAnswer = 0;
+	
+	//	check the arguments
+	FailWithAction(inDriver != gAudioServerPlugInDriverRef, theAnswer = kAudioHardwareBadObjectError, Done, "SoundPusherAudio_IsBoxPropertySettable: bad driver reference");
+	FailWithAction(inAddress == NULL, theAnswer = kAudioHardwareIllegalOperationError, Done, "SoundPusherAudio_IsBoxPropertySettable: no address");
+	FailWithAction(outIsSettable == NULL, theAnswer = kAudioHardwareIllegalOperationError, Done, "SoundPusherAudio_IsBoxPropertySettable: no place to put the return value");
+	FailWithAction(inObjectID != kObjectID_Box, theAnswer = kAudioHardwareBadObjectError, Done, "SoundPusherAudio_IsBoxPropertySettable: not the plug-in object");
+	
+	//	Note that for each object, this driver implements all the required properties plus a few
+	//	extras that are useful but not required. There is more detailed commentary about each
+	//	property in the SoundPusherAudio_GetBoxPropertyData() method.
+	switch(inAddress->mSelector)
+	{
+		case kAudioObjectPropertyBaseClass:
+		case kAudioObjectPropertyClass:
+		case kAudioObjectPropertyOwner:
+		case kAudioObjectPropertyModelName:
+		case kAudioObjectPropertyManufacturer:
+		case kAudioObjectPropertyOwnedObjects:
+		case kAudioObjectPropertyName:
+		case kAudioBoxPropertyBoxUID:
+		case kAudioBoxPropertyTransportType:
+		case kAudioBoxPropertyHasAudio:
+		case kAudioBoxPropertyHasVideo:
+		case kAudioBoxPropertyHasMIDI:
+		case kAudioBoxPropertyIsProtected:
+		case kAudioBoxPropertyAcquisitionFailed:
+		case kAudioBoxPropertyDeviceList:
+			*outIsSettable = false;
+			break;
+		
+		case kAudioBoxPropertyAcquired:
+			*outIsSettable = true;
+			break;
+		
+		default:
+			theAnswer = kAudioHardwareUnknownPropertyError;
+			break;
+	};
+
+Done:
+	return theAnswer;
+}
+
+static OSStatus	SoundPusherAudio_GetBoxPropertyDataSize(AudioServerPlugInDriverRef inDriver, AudioObjectID inObjectID, pid_t inClientProcessID, const AudioObjectPropertyAddress* inAddress, UInt32 inQualifierDataSize, const void* inQualifierData, UInt32* outDataSize)
+{
+	//	This method returns the byte size of the property's data.
+	
+	#pragma unused(inClientProcessID, inQualifierDataSize, inQualifierData)
+	
+	//	declare the local variables
+	OSStatus theAnswer = 0;
+	
+	//	check the arguments
+	FailWithAction(inDriver != gAudioServerPlugInDriverRef, theAnswer = kAudioHardwareBadObjectError, Done, "SoundPusherAudio_GetBoxPropertyDataSize: bad driver reference");
+	FailWithAction(inAddress == NULL, theAnswer = kAudioHardwareIllegalOperationError, Done, "SoundPusherAudio_GetBoxPropertyDataSize: no address");
+	FailWithAction(outDataSize == NULL, theAnswer = kAudioHardwareIllegalOperationError, Done, "SoundPusherAudio_GetBoxPropertyDataSize: no place to put the return value");
+	FailWithAction(inObjectID != kObjectID_Box, theAnswer = kAudioHardwareBadObjectError, Done, "SoundPusherAudio_GetBoxPropertyDataSize: not the plug-in object");
+	
+	//	Note that for each object, this driver implements all the required properties plus a few
+	//	extras that are useful but not required. There is more detailed commentary about each
+	//	property in the SoundPusherAudio_GetBoxPropertyData() method.
+	switch(inAddress->mSelector)
+	{
+		case kAudioObjectPropertyBaseClass:
+			*outDataSize = sizeof(AudioClassID);
+			break;
+			
+		case kAudioObjectPropertyClass:
+			*outDataSize = sizeof(AudioClassID);
+			break;
+			
+		case kAudioObjectPropertyOwner:
+			*outDataSize = sizeof(AudioObjectID);
+			break;
+			
+		case kAudioObjectPropertyName:
+			*outDataSize = sizeof(CFStringRef);
+			break;
+			
+		case kAudioObjectPropertyModelName:
+			*outDataSize = sizeof(CFStringRef);
+			break;
+			
+		case kAudioObjectPropertyManufacturer:
+			*outDataSize = sizeof(CFStringRef);
+			break;
+			
+		case kAudioObjectPropertyOwnedObjects:
+			*outDataSize = 0;
+			break;
+			
+		case kAudioBoxPropertyBoxUID:
+			*outDataSize = sizeof(CFStringRef);
+			break;
+			
+		case kAudioBoxPropertyTransportType:
+			*outDataSize = sizeof(UInt32);
+			break;
+			
+		case kAudioBoxPropertyHasAudio:
+			*outDataSize = sizeof(UInt32);
+			break;
+			
+		case kAudioBoxPropertyHasVideo:
+			*outDataSize = sizeof(UInt32);
+			break;
+			
+		case kAudioBoxPropertyHasMIDI:
+			*outDataSize = sizeof(UInt32);
+			break;
+			
+		case kAudioBoxPropertyIsProtected:
+			*outDataSize = sizeof(UInt32);
+			break;
+			
+		case kAudioBoxPropertyAcquired:
+			*outDataSize = sizeof(UInt32);
+			break;
+			
+		case kAudioBoxPropertyAcquisitionFailed:
+			*outDataSize = sizeof(UInt32);
+			break;
+			
+		case kAudioBoxPropertyDeviceList:
+			{
+				pthread_mutex_lock(&gDevice.Mutex);
+				*outDataSize = gDevice.Box_IsAcquired ? sizeof(AudioObjectID) : 0;
+				pthread_mutex_unlock(&gDevice.Mutex);
+			}
+			break;
+			
+		default:
+			theAnswer = kAudioHardwareUnknownPropertyError;
+			break;
+	};
+
+Done:
+	return theAnswer;
+}
+
+static OSStatus	SoundPusherAudio_GetBoxPropertyData(AudioServerPlugInDriverRef inDriver, AudioObjectID inObjectID, pid_t inClientProcessID, const AudioObjectPropertyAddress* inAddress, UInt32 inQualifierDataSize, const void* inQualifierData, UInt32 inDataSize, UInt32* outDataSize, void* outData)
+{
+	#pragma unused(inClientProcessID, inQualifierDataSize, inQualifierData)
+	
+	//	declare the local variables
+	OSStatus theAnswer = 0;
+	bool boxIsAcquired = false;
+	
+	//	check the arguments
+	FailWithAction(inDriver != gAudioServerPlugInDriverRef, theAnswer = kAudioHardwareBadObjectError, Done, "SoundPusherAudio_GetBoxPropertyData: bad driver reference");
+	FailWithAction(inAddress == NULL, theAnswer = kAudioHardwareIllegalOperationError, Done, "SoundPusherAudio_GetBoxPropertyData: no address");
+	FailWithAction(outDataSize == NULL, theAnswer = kAudioHardwareIllegalOperationError, Done, "SoundPusherAudio_GetBoxPropertyData: no place to put the return value size");
+	FailWithAction(outData == NULL, theAnswer = kAudioHardwareIllegalOperationError, Done, "SoundPusherAudio_GetBoxPropertyData: no place to put the return value");
+	FailWithAction(inObjectID != kObjectID_Box, theAnswer = kAudioHardwareBadObjectError, Done, "SoundPusherAudio_GetBoxPropertyData: not the plug-in object");
+	
+	//	Note that for each object, this driver implements all the required properties plus a few
+	//	extras that are useful but not required.
+	//
+	//	Also, since most of the data that will get returned is static, there are few instances where
+	//	it is necessary to lock the state mutex.
+	switch(inAddress->mSelector)
+	{
+		case kAudioObjectPropertyBaseClass:
+			//	The base class for kAudioBoxClassID is kAudioObjectClassID
+			FailWithAction(inDataSize < sizeof(AudioClassID), theAnswer = kAudioHardwareBadPropertySizeError, Done, "SoundPusherAudio_GetBoxPropertyData: not enough space for the return value of kAudioObjectPropertyBaseClass for the box");
+			*((AudioClassID*)outData) = kAudioObjectClassID;
+			*outDataSize = sizeof(AudioClassID);
+			break;
+			
+		case kAudioObjectPropertyClass:
+			//	The class is always kAudioBoxClassID for regular drivers
+			FailWithAction(inDataSize < sizeof(AudioClassID), theAnswer = kAudioHardwareBadPropertySizeError, Done, "SoundPusherAudio_GetBoxPropertyData: not enough space for the return value of kAudioObjectPropertyClass for the box");
+			*((AudioClassID*)outData) = kAudioBoxClassID;
+			*outDataSize = sizeof(AudioClassID);
+			break;
+			
+		case kAudioObjectPropertyOwner:
+			//	The owner is the plug-in object
+			FailWithAction(inDataSize < sizeof(AudioObjectID), theAnswer = kAudioHardwareBadPropertySizeError, Done, "SoundPusherAudio_GetBoxPropertyData: not enough space for the return value of kAudioObjectPropertyOwner for the box");
+			*((AudioObjectID*)outData) = kObjectID_PlugIn;
+			*outDataSize = sizeof(AudioObjectID);
+			break;
+			
+		case kAudioObjectPropertyName:
+			//	This is the human readable name of the box.
+			FailWithAction(inDataSize < sizeof(CFStringRef), theAnswer = kAudioHardwareBadPropertySizeError, Done, "SoundPusherAudio_GetBoxPropertyData: not enough space for the return value of kAudioObjectPropertyManufacturer for the box");
+			*((CFStringRef*)outData) = CFSTR("SoundPusherAudio Box");
+			*outDataSize = sizeof(CFStringRef);
+			break;
+			
+		case kAudioObjectPropertyModelName:
+			//	This is the human readable name of the model of the box.
+			FailWithAction(inDataSize < sizeof(CFStringRef), theAnswer = kAudioHardwareBadPropertySizeError, Done, "SoundPusherAudio_GetBoxPropertyData: not enough space for the return value of kAudioObjectPropertyManufacturer for the box");
+			*((CFStringRef*)outData) = CFSTR("SoundPusherAudio Model");
+			*outDataSize = sizeof(CFStringRef);
+			break;
+			
+		case kAudioObjectPropertyManufacturer:
+			//	This is the human readable name of the maker of the box.
+			FailWithAction(inDataSize < sizeof(CFStringRef), theAnswer = kAudioHardwareBadPropertySizeError, Done, "SoundPusherAudio_GetBoxPropertyData: not enough space for the return value of kAudioObjectPropertyManufacturer for the box");
+			*((CFStringRef*)outData) = CFSTR("ManufacturerName");
+			*outDataSize = sizeof(CFStringRef);
+			break;
+			
+		case kAudioObjectPropertyOwnedObjects:
+			//	This returns the objects directly owned by the object. Boxes don't own anything.
+			*outDataSize = 0;
+			break;
+			
+		case kAudioBoxPropertyBoxUID:
+			//	Boxes have UIDs the same as devices
+			FailWithAction(inDataSize < sizeof(CFStringRef), theAnswer = kAudioHardwareBadPropertySizeError, Done, "SoundPusherAudio_GetBoxPropertyData: not enough space for the return value of kAudioObjectPropertyManufacturer for the box");
+			*((CFStringRef*)outData) = CFSTR(kBox_UID);
+			break;
+			
+		case kAudioBoxPropertyTransportType:
+			//	This value represents how the device is attached to the system. This can be
+			//	any 32 bit integer, but common values for this property are defined in
+			//	<CoreAudio/AudioHardwareBase.h>
+			FailWithAction(inDataSize < sizeof(UInt32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "SoundPusherAudio_GetBoxPropertyData: not enough space for the return value of kAudioDevicePropertyTransportType for the box");
+			*((UInt32*)outData) = kAudioDeviceTransportTypeVirtual;
+			*outDataSize = sizeof(UInt32);
+			break;
+			
+		case kAudioBoxPropertyHasAudio:
+			//	Indicates whether or not the box has audio capabilities
+			FailWithAction(inDataSize < sizeof(UInt32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "SoundPusherAudio_GetBoxPropertyData: not enough space for the return value of kAudioBoxPropertyHasAudio for the box");
+			*((UInt32*)outData) = 1;
+			*outDataSize = sizeof(UInt32);
+			break;
+			
+		case kAudioBoxPropertyHasVideo:
+			//	Indicates whether or not the box has video capabilities
+			FailWithAction(inDataSize < sizeof(UInt32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "SoundPusherAudio_GetBoxPropertyData: not enough space for the return value of kAudioBoxPropertyHasVideo for the box");
+			*((UInt32*)outData) = 0;
+			*outDataSize = sizeof(UInt32);
+			break;
+			
+		case kAudioBoxPropertyHasMIDI:
+			//	Indicates whether or not the box has MIDI capabilities
+			FailWithAction(inDataSize < sizeof(UInt32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "SoundPusherAudio_GetBoxPropertyData: not enough space for the return value of kAudioBoxPropertyHasMIDI for the box");
+			*((UInt32*)outData) = 0;
+			*outDataSize = sizeof(UInt32);
+			break;
+			
+		case kAudioBoxPropertyIsProtected:
+			//	Indicates whether or not the box has requires authentication to use
+			FailWithAction(inDataSize < sizeof(UInt32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "SoundPusherAudio_GetBoxPropertyData: not enough space for the return value of kAudioBoxPropertyIsProtected for the box");
+			*((UInt32*)outData) = 0;
+			*outDataSize = sizeof(UInt32);
+			break;
+			
+		case kAudioBoxPropertyAcquired:
+			//	When set to a non-zero value, the device is acquired for use by the local machine
+			FailWithAction(inDataSize < sizeof(UInt32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "SoundPusherAudio_GetBoxPropertyData: not enough space for the return value of kAudioBoxPropertyAcquired for the box");
+			pthread_mutex_lock(&gDevice.Mutex);
+			*((UInt32*)outData) = gDevice.Box_IsAcquired ? 1 : 0;
+			pthread_mutex_unlock(&gDevice.Mutex);
+			*outDataSize = sizeof(UInt32);
+			break;
+			
+		case kAudioBoxPropertyAcquisitionFailed:
+			//	This is used for notifications to say when an attempt to acquire a device has failed.
+			FailWithAction(inDataSize < sizeof(UInt32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "SoundPusherAudio_GetBoxPropertyData: not enough space for the return value of kAudioBoxPropertyAcquisitionFailed for the box");
+			*((UInt32*)outData) = 0;
+			*outDataSize = sizeof(UInt32);
+			break;
+			
+		case kAudioBoxPropertyDeviceList:
+			//	This is used to indicate which devices came from this box
+			pthread_mutex_lock(&gDevice.Mutex);
+			boxIsAcquired = gDevice.Box_IsAcquired;
+			pthread_mutex_unlock(&gDevice.Mutex);
+			if(boxIsAcquired)
+			{
+				FailWithAction(inDataSize < sizeof(AudioObjectID), theAnswer = kAudioHardwareBadPropertySizeError, Done, "SoundPusherAudio_GetBoxPropertyData: not enough space for the return value of kAudioBoxPropertyDeviceList for the box");
+				*((AudioObjectID*)outData) = kObjectID_Device;
+				*outDataSize = sizeof(AudioObjectID);
+			}
+			else
+			{
+				*outDataSize = 0;
+			}
+			break;
+			
+		default:
+			theAnswer = kAudioHardwareUnknownPropertyError;
+			break;
+	};
+
+Done:
+	return theAnswer;
+}
+
+static OSStatus	SoundPusherAudio_SetBoxPropertyData(AudioServerPlugInDriverRef inDriver, AudioObjectID inObjectID, pid_t inClientProcessID, const AudioObjectPropertyAddress* inAddress, UInt32 inQualifierDataSize, const void* inQualifierData, UInt32 inDataSize, const void* inData, UInt32* outNumberPropertiesChanged, AudioObjectPropertyAddress outChangedAddresses[2])
+{
+	#pragma unused(inClientProcessID, inQualifierDataSize, inQualifierData, inDataSize, inData)
+	
+	//	declare the local variables
+	OSStatus theAnswer = 0;
+	
+	//	check the arguments
+	FailWithAction(inDriver != gAudioServerPlugInDriverRef, theAnswer = kAudioHardwareBadObjectError, Done, "SoundPusherAudio_SetBoxPropertyData: bad driver reference");
+	FailWithAction(inAddress == NULL, theAnswer = kAudioHardwareIllegalOperationError, Done, "SoundPusherAudio_SetBoxPropertyData: no address");
+	FailWithAction(outNumberPropertiesChanged == NULL, theAnswer = kAudioHardwareIllegalOperationError, Done, "SoundPusherAudio_SetBoxPropertyData: no place to return the number of properties that changed");
+	FailWithAction(outChangedAddresses == NULL, theAnswer = kAudioHardwareIllegalOperationError, Done, "SoundPusherAudio_SetBoxPropertyData: no place to return the properties that changed");
+	FailWithAction(inObjectID != kObjectID_Box, theAnswer = kAudioHardwareBadObjectError, Done, "SoundPusherAudio_SetBoxPropertyData: not the box object");
+	
+	//	initialize the returned number of changed properties
+	*outNumberPropertiesChanged = 0;
+	
+	//	Note that for each object, this driver implements all the required properties plus a few
+	//	extras that are useful but not required. There is more detailed commentary about each
+	//	property in the SoundPusherAudio_GetPlugInPropertyData() method.
+	switch(inAddress->mSelector)
+	{
+		case kAudioBoxPropertyAcquired:
+			//	When the box is acquired, it means the contents, namely the device, are available to the system
+			{
+				FailWithAction(inDataSize != sizeof(UInt32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "SoundPusherAudio_SetBoxPropertyData: wrong size for the data for kAudioBoxPropertyAcquired");
+				pthread_mutex_lock(&gDevice.Mutex);
+				bool didChange = false;
+				if(gDevice.Box_IsAcquired != (*((UInt32*)inData) != 0))
+				{
+					//	the new value is different from the old value, so save it
+					gDevice.Box_IsAcquired = *((UInt32*)inData) != 0;
+					didChange = true;
+				}
+				pthread_mutex_unlock(&gDevice.Mutex);
+				if(didChange)
+				{
+					//	and it means that this property and the device list property have changed
+					*outNumberPropertiesChanged = 2;
+					outChangedAddresses[0].mSelector = kAudioBoxPropertyAcquired;
+					outChangedAddresses[0].mScope = kAudioObjectPropertyScopeGlobal;
+					outChangedAddresses[0].mElement = kAudioObjectPropertyElementMain;
+					outChangedAddresses[1].mSelector = kAudioBoxPropertyDeviceList;
+					outChangedAddresses[1].mScope = kAudioObjectPropertyScopeGlobal;
+					outChangedAddresses[1].mElement = kAudioObjectPropertyElementMain;
+					
+					//	but it also means that the device list has changed for the plug-in too
+					dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),	^()
+																									{
+																										AudioObjectPropertyAddress theAddress = { kAudioPlugInPropertyDeviceList, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain };
+																										gPlugIn_Host->PropertiesChanged(gPlugIn_Host, kObjectID_PlugIn, 1, &theAddress);
+																									});
+				}
+			}
+			break;
+			
 		default:
 			theAnswer = kAudioHardwareUnknownPropertyError;
 			break;
@@ -1624,8 +2152,6 @@ static OSStatus	SoundPusherAudio_GetDevicePropertyData(AudioServerPlugInDriverRe
 			//	device, the value is 0 due to the fact that it always vends silence.
 			FailWithAction(inDataSize < sizeof(UInt32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "SoundPusherAudio_GetDevicePropertyData: not enough space for the return value of kAudioDevicePropertyLatency for the device");
 			*((UInt32*)outData) = 0;
-			if (inAddress->mScope == kAudioObjectPropertyScopeOutput)
-				*((UInt32*)outData) = 1536; // FIXME frame-size of SoundPusher output format?
 			*outDataSize = sizeof(UInt32);
 			break;
 
@@ -1774,7 +2300,7 @@ static OSStatus	SoundPusherAudio_GetDevicePropertyData(AudioServerPlugInDriverRe
 			//	This property returns how many frames the HAL should expect to see between
 			//	successive sample times in the zero time stamps this device provides.
 			FailWithAction(inDataSize < sizeof(UInt32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "SoundPusherAudio_GetDevicePropertyData: not enough space for the return value of kAudioDevicePropertyZeroTimeStampPeriod for the device");
-			// as our ring-buffer only support sizes of page_length, we need to adjust the expected zero time stamp period
+			// as our ring-buffer only support sizes of kDevice_NumZeroFrames, we need to adjust the expected zero time stamp period
 			*((UInt32*)outData) = kDevice_NumZeroFrames;
 			*outDataSize = sizeof(UInt32);
 			break;
@@ -2089,8 +2615,8 @@ static OSStatus	SoundPusherAudio_GetStreamPropertyData(AudioServerPlugInDriverRe
 			//	such as a speaker or headphones, or a microphone. Values for this property
 			//	are defined in <CoreAudio/AudioHardwareBase.h>
 			FailWithAction(inDataSize < sizeof(UInt32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "SoundPusherAudio_GetStreamPropertyData: not enough space for the return value of kAudioStreamPropertyTerminalType for the stream");
-//			*((UInt32*)outData) = kAudioStreamTerminalTypeDigitalAudioInterface;
-			*((UInt32*)outData) = kAudioStreamTerminalTypeLine;
+			*((UInt32*)outData) = kAudioStreamTerminalTypeDigitalAudioInterface;
+//			*((UInt32*)outData) = kAudioStreamTerminalTypeLine;
 			*outDataSize = sizeof(UInt32);
 			break;
 
@@ -2107,7 +2633,7 @@ static OSStatus	SoundPusherAudio_GetStreamPropertyData(AudioServerPlugInDriverRe
 		case kAudioStreamPropertyLatency:
 			//	This property returns any additonal presentation latency the stream has.
 			FailWithAction(inDataSize < sizeof(UInt32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "SoundPusherAudio_GetStreamPropertyData: not enough space for the return value of kAudioStreamPropertyStartingChannel for the stream");
-			*((UInt32*)outData) = 0;
+			*((UInt32*)outData) = 1536; // FIXME frame-size of SoundPusher output format?
 			*outDataSize = sizeof(UInt32);
 			break;
 

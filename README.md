@@ -15,6 +15,8 @@ There are two components required to make this work:
 
 Once the driver is installed and `SoundPusher` running, you should be able to select the desired combination of supported source and digital output devices (which will forward any sound output from the source device to the designated digital output). `SoundPusher` will set the default output device to the selected source device (e.g. `SoundPusher Audio`) and restore the default device on exit.
 
+Note that the `SoundPusher Audio` device will be hidden unless the `SoundPusher` application is running.
+
 You can override the default IOCycle timing adjustment (which attempts to postpone the encoding to as late as possible to just before the hardware needs the next packet) in case you notice sound drop-outs or overloads. The default is a safety-factor of 8. This is done via `defaults write de.maven.SoundPusher IOCycleSafetyFactor -float <value>`. Any value less than 1 disables IOCycle adjustment altogether, which means that CoreAudio starts preparing the next packet roughly when the current packet is sent to the hardware (which is usually a bit of a waste as current hardware can easily encode 100x faster than real-time).
 
 You can also switch back to the old rear channel upmixing with `defaults write de.maven.SoundPusher UpmixDPLiiRear -bool NO`.
