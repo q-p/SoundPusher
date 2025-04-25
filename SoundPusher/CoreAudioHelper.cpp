@@ -349,8 +349,9 @@ DeviceBoxAcquirer::DeviceBoxAcquirer(CFStringRef boxUID)
   {
     _box = kAudioDeviceUnknown;
     os_log(OS_LOG_DEFAULT, "Could not acquire box for '%@': %s", boxUID, Get4CCAsString(status).c_str());
-    return;
   }
+  if (_box == kAudioDeviceUnknown)
+    return;
 
   const UInt32 isAcquired = 1;
   dataSize = sizeof isAcquired;
