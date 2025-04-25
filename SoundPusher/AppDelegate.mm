@@ -581,7 +581,7 @@ static void AttemptToStartMissingChains(CAHelper::DefaultDeviceChanger *defaultD
     name:NSWorkspaceDidWakeNotification object:NULL];
 
   // our acquiring of the box with our device may have posted some messages, so process those messages first
-  dispatch_async(dispatch_get_main_queue(), ^{
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)NSEC_PER_SEC / 4), dispatch_get_main_queue(), ^{
     AttemptToStartMissingChains();
   });
 }
